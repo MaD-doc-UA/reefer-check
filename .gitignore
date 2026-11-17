@@ -1,0 +1,15 @@
+# cargo data never goes into git
+*.xlsm
+*.xlsx
+*.xls
+*.BAP
+*.bap
+*.pdf
+*.csv
+testdata/
+app/localtest/
+
+# build output and deps
+node_modules/
+app/dist/
+*.log
