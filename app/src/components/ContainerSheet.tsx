@@ -1,12 +1,48 @@
 import { useState } from 'preact/hooks';
-import { BAY_GROUPS, TAGS, bayGroupLabel, pad2, plugBayOf, type Reefer, type Tag } from '../model';
-import { markFound, setNote, setTags, toggleLoaded, useStore } from '../store';
-import { CATEGORY_LABEL, categoryOf, fmtNum, fmtPos, fmtTemp } from '../view';
+import { BAY_GROUPS, TAGS, bayGroupLabel, fmtElapsed, pad2, plugBayOf, statusOf, type Reefer, type Status, type Tag } from '../model';
+import { markFound, setNote, setStatus, setTags, useStore } from '../store';
+import { CATEGORY_LABEL, categoryOf, fmtNum, fmtPos, fmtTemp, type Filter } from '../view';
 
 interface Props {
   reefer: Reefer;
   contextBay: number | null; // bay the user is checking right now
+  mode: Filter['mode'];
   onClose: () => void;
+}
+
+/** Ask once for permission to show reminders as system notifications. */
+function askNotifyPermission() {
+  try {
+    if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => undefined);
+  } catch { /* ignore */ }
+}
+
+interface Action { label: string; to: Status | undefined; kind: 'main' | 'alt' | 'undo' }
+
+/** Buttons for the current status in the current mode. */
+function actionsFor(status: Status | undefined, mode: Filter['mode'], restow: boolean): Action[] {
+  const load = mode === 'pol';
+  const disch = mode === 'pod';
+  switch (status) {
+    case undefined:
+      if (load) return [{ label: 'Connected', to: 'connected', kind: 'main' }];
+      if (disch) return [{ label: 'Disconnected', to: 'disconnected', kind: 'main' }, { label: 'Connected', to: 'connected', kind: 'alt' }];
+      return [{ label: 'Connected', to: 'connected', kind: 'main' }, { label: 'Disconnected', to: 'disconnected', kind: 'alt' }];
+    case 'connected':
+      return load
+        ? [{ label: '✓ Connected · undo', to: undefined, kind: 'undo' }]
+        : [{ label: 'Disconnected', to: 'disconnected', kind: 'main' }, { label: '✓ Connected · undo', to: undefined, kind: 'undo' }];
+    case 'disconnected':
+      return [
+        { label: 'Discharged (off board)', to: 'discharged', kind: 'main' },
+        { label: 'Reconnect', to: 'connected', kind: 'alt' },
+      ];
+    case 'discharged':
+      return [
+        { label: restow ? 'Reconnect (restow loaded back)' : 'Reconnect (loaded back)', to: 'connected', kind: restow ? 'main' : 'alt' },
+        { label: '↓ Discharged · undo', to: 'disconnected', kind: 'undo' },
+      ];
+  }
 }
 
 function fmtTime(iso?: string): string {
@@ -33,9 +69,10 @@ function slotTree(slots: string[], bay: number) {
   return { tiers, rowsAt, sizesAt };
 }
 
-export function ContainerSheet({ reefer: r, contextBay, onClose }: Props) {
+export function ContainerSheet({ reefer: r, contextBay, mode, onClose }: Props) {
   const { marks, plan, log } = useStore();
   const m = marks[r.cont];
+  const st = statusOf(m);
   const [note, setNoteText] = useState(m?.note ?? '');
   const [picking, setPicking] = useState(false);
   const [bay, setBay] = useState<number>(contextBay ?? r.plugBay);
@@ -99,10 +136,25 @@ export function ContainerSheet({ reefer: r, contextBay, onClose }: Props) {
           </div>
         )}
 
-        <button class={`big-btn ${m?.loaded ? 'on' : ''}`} onClick={() => toggleLoaded(r.cont, r.pos)}>
-          {m?.loaded ? '✓ Loaded (tap to undo)' : 'Mark as loaded'}
-        </button>
-        {m?.loaded && m.loadedAt && <div class="muted small center">by {m.loadedBy || '?'} · {fmtTime(m.loadedAt)}</div>}
+        <div class="status-line">
+          {st === 'connected' && <span class="st st-connected">● Connected</span>}
+          {st === 'disconnected' && <span class="st st-disconnected">● Disconnected {fmtElapsed(m?.disconnectedAt)} ago</span>}
+          {st === 'discharged' && <span class="st st-discharged">● Discharged</span>}
+          {!st && <span class="st">○ No status</span>}
+        </div>
+        {actionsFor(st, mode, !!r.restow).map(a => (
+          <button
+            class={`big-btn ${a.kind === 'undo' ? 'on' : a.kind === 'alt' ? 'alt' : ''} ${a.to === 'disconnected' && a.kind === 'main' ? 'warn-btn' : ''}`}
+            onClick={() => { if (a.to === 'disconnected') askNotifyPermission(); setStatus(r.cont, r.pos, a.to); }}
+          >
+            {a.label}
+          </button>
+        ))}
+        <div class="muted small center stamps">
+          {m?.loadedAt && <span>connected by {m.loadedBy || '?'} · {fmtTime(m.loadedAt)}</span>}
+          {m?.disconnectedAt && <span>disconnected by {m.disconnectedBy || '?'} · {fmtTime(m.disconnectedAt)}</span>}
+          {m?.dischargedAt && <span>discharged by {m.dischargedBy || '?'} · {fmtTime(m.dischargedAt)}</span>}
+        </div>
 
         {!picking && (
           <>

@@ -1,6 +1,6 @@
-import { DECK_TIERS, HOLD_TIERS, ROWS_ORDER, bayGroupLabel, pad2, plugBayOf, side20, type Plan, type Reefer } from '../model';
-import { toggleLoaded, useStore } from '../store';
-import { categoryOf, passes, shortNo, type Filter } from '../view';
+import { DECK_TIERS, HOLD_TIERS, ROWS_ORDER, bayGroupLabel, fmtElapsed, isOverdue, pad2, plugBayOf, side20, statusOf, type Plan, type Reefer, type Status } from '../model';
+import { setStatus, useStore } from '../store';
+import { categoryOf, isDone, passes, shortNo, type Filter } from '../view';
 
 interface Props {
   plan: Plan;
@@ -9,6 +9,19 @@ interface Props {
   quickMark: boolean;
   onOpen: (r: Reefer) => void;
   onBay: (bay: number) => void;
+  now: number;
+}
+
+/** Quick mark: the next step for the mode (undo only through the card). */
+function nextStatus(cur: Status | undefined, mode: Filter['mode']): Status | undefined | null {
+  if (mode === 'pod') {
+    if (cur === undefined || cur === 'connected') return 'disconnected';
+    if (cur === 'disconnected') return 'discharged';
+    return null; // discharged: open the card instead
+  }
+  if (cur === undefined || cur === 'discharged') return 'connected';
+  if (cur === 'connected' && mode === 'pol') return undefined; // toggle off, as before
+  return null;
 }
 
 interface CellData {
@@ -18,8 +31,8 @@ interface CellData {
   aft?: Reefer;
 }
 
-export function BayView({ plan, bay, filter, quickMark, onOpen, onBay }: Props) {
-  const { marks } = useStore();
+export function BayView({ plan, bay, filter, quickMark, onOpen, onBay, now }: Props) {
+  const { marks, settings } = useStore();
   const cells = new Map<string, CellData>();
   const key = (row: number, tier: number) => `${row}-${tier}`;
   const get = (row: number, tier: number) => {
@@ -41,15 +54,18 @@ export function BayView({ plan, bay, filter, quickMark, onOpen, onBay }: Props) 
   }
 
   const shown = inBay.filter(r => passes(r, filter));
-  const done = shown.filter(r => marks[r.cont]?.loaded).length;
+  const done = shown.filter(r => isDone(marks[r.cont], filter)).length;
   const foundHere = Object.entries(marks).filter(([, m]) => m.foundBay === bay);
 
   const usedRows = ROWS_ORDER.filter(row => [...DECK_TIERS, ...HOLD_TIERS].some(t => cells.get(key(row, t))?.slot));
   const tiersWith = (tiers: number[]) => tiers.filter(t => usedRows.some(row => cells.get(key(row, t))?.slot));
 
   const tap = (r: Reefer) => {
-    if (quickMark) toggleLoaded(r.cont, r.pos);
-    else onOpen(r);
+    if (quickMark) {
+      const next = nextStatus(statusOf(marks[r.cont]), filter.mode);
+      if (next !== null) { setStatus(r.cont, r.pos, next); return; }
+    }
+    onOpen(r);
   };
 
   /**
@@ -58,19 +74,25 @@ export function BayView({ plan, bay, filter, quickMark, onOpen, onBay }: Props) 
    */
   const box = (r: Reefer, size20?: 'F' | 'A', half = false) => {
     const m = marks[r.cont];
+    const st = statusOf(m);
     const dim = !passes(r, filter);
     const cls = [
       half ? 'half' : 'full', `c-${categoryOf(r)}`,
-      m?.loaded ? 'loaded' : '', dim ? 'dim' : '',
+      st === 'connected' ? 'loaded' : '', st === 'disconnected' ? 'disc' : '', st === 'discharged' ? 'gone' : '',
+      isOverdue(m, settings.remindHours, now) ? 'overdue' : '',
+      dim ? 'dim' : '',
       r.restow ? 'restow' : '', r.tempDiff ? 'tdiff' : '',
       m && (m.tags.length || m.note || m.foundBay !== undefined || m.movedFrom) ? 'issue' : '',
     ].join(' ');
     return (
       <button class={cls} onClick={() => tap(r)} title={`${r.cont} ${r.pol}-${r.pod}${size20 ? ` 20' ${size20 === 'F' ? 'fore' : 'aft'}` : ''}`}>
         <span class="no">{shortNo(r.cont)}</span>
-        {!half && <span class="pod">{r.pod}</span>}
+        {!half && (st === 'disconnected'
+          ? <span class="pod elapsed">{fmtElapsed(m?.disconnectedAt, now)}</span>
+          : <span class="pod">{r.pod}</span>)}
         {size20 && <span class="t20">{half ? size20 : `20${size20}`}</span>}
-        {m?.loaded && <span class="tick">✓</span>}
+        {st === 'connected' && <span class="tick">✓</span>}
+        {st === 'discharged' && <span class="tick gone-mark">↓</span>}
       </button>
     );
   };

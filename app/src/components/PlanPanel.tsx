@@ -1,6 +1,8 @@
 import { useState } from 'preact/hooks';
 import { parseWorkbook } from '../parseWorkbook';
-import { applyPlan, clearAll, dismissMerge, exportLogCsv, exportMarks, importMarks, setUser, useStore } from '../store';
+import { statusOf } from '../model';
+import { applyPlan, clearAll, dismissMerge, exportLogCsv, exportMarks, importMarks, setRemindHours, setUser, useStore } from '../store';
+import { fmtPos } from '../view';
 
 function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
@@ -12,15 +14,9 @@ function download(blob: Blob, name: string) {
 }
 
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
-import { fmtPos, type Filter } from '../view';
 
-interface Props {
-  filter: Filter;
-  setFilter: (f: Filter) => void;
-}
-
-export function PlanPanel({ filter, setFilter }: Props) {
-  const { plan, marks, lastMerge, user, log } = useStore();
+export function PlanPanel() {
+  const { plan, marks, lastMerge, user, log, settings } = useStore();
   const [name, setName] = useState(user);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
@@ -33,10 +29,8 @@ export function PlanPanel({ filter, setFilter }: Props) {
     setBusy(true); setMsg('');
     try {
       const p = await parseWorkbook(f);
-      const rep = applyPlan(p);
+      applyPlan(p);
       setMsg(`Loaded ${p.reefers.length} reefers from ${p.fileName}.` + (plan ? ` Marks kept: ${Object.keys(marks).length}.` : ''));
-      if (!plan && p.currentPort) setFilter({ mode: 'pol', port: p.currentPort });
-      void rep;
     } catch (err) {
       setMsg(`Could not read the file: ${(err as Error).message}`);
     } finally {
@@ -60,7 +54,7 @@ export function PlanPanel({ filter, setFilter }: Props) {
     }
   };
 
-  const loadedCount = Object.values(marks).filter(m => m.loaded).length;
+  const count = (s: string) => Object.values(marks).filter(m => statusOf(m) === s).length;
 
   return (
     <div class="plan-panel">
@@ -69,7 +63,7 @@ export function PlanPanel({ filter, setFilter }: Props) {
         {plan ? (
           <p>
             <b>{plan.fileName}</b><br />
-            <span class="muted">opened {new Date(plan.importedAt).toLocaleString()} · {plan.reefers.length} reefers · current port {plan.currentPort || '-'} · {loadedCount} marked loaded</span>
+            <span class="muted">opened {new Date(plan.importedAt).toLocaleString()} · {plan.reefers.length} reefers · current port {plan.currentPort || '-'} · {count('connected')} connected · {count('disconnected')} disconnected · {count('discharged')} discharged</span>
           </p>
         ) : (
           <p class="muted">No plan yet. Save the spot plan in Excel (after IMPORT BAP and manifests), send the .xlsm to this phone and open it here.</p>
@@ -90,29 +84,23 @@ export function PlanPanel({ filter, setFilter }: Props) {
             <li class={lastMerge.moved.length ? 'bad' : ''}>{lastMerge.moved.length} marked containers changed position</li>
             <li class={lastMerge.notInPlan.length ? 'bad' : ''}>{lastMerge.notInPlan.length} marked containers no longer in the plan</li>
             {lastMerge.resolvedFound.length > 0 && <li>{lastMerge.resolvedFound.length} "found in another bay" now match the plan</li>}
+            {(lastMerge.dischargedGone ?? 0) > 0 && <li>{lastMerge.dischargedGone} discharged containers left the plan (as expected)</li>}
           </ul>
           {lastMerge.moved.slice(0, 20).map(x => <div class="small">{x.cont}: {fmtPos(x.from)} → {fmtPos(x.to)}</div>)}
           <button class="small-btn" onClick={dismissMerge}>OK</button>
         </div>
       )}
 
-      {plan && (
-        <div class="card">
-          <h3>Port filter</h3>
-          <div class="seg">
-            {(['all', 'pol', 'pod'] as const).map(mode => (
-              <button class={filter.mode === mode ? 'on' : ''} onClick={() => setFilter({ mode, port: filter.port || plan.currentPort || plan.ports[0] || '' })}>
-                {mode === 'all' ? 'All' : mode === 'pol' ? 'Loading at' : 'Discharging at'}
-              </button>
-            ))}
-          </div>
-          {filter.mode !== 'all' && (
-            <select value={filter.port} onChange={e => setFilter({ ...filter, port: (e.target as HTMLSelectElement).value })}>
-              {plan.ports.map(p => <option value={p}>{p}</option>)}
-            </select>
-          )}
+      <div class="card">
+        <h3>Discharge reminder</h3>
+        <p class="muted small">Remind to confirm "Discharged" when a reefer stays disconnected longer than:</p>
+        <div class="seg">
+          {[1, 2, 3, 4].map(h => (
+            <button class={settings.remindHours === h ? 'on' : ''} onClick={() => setRemindHours(h)}>{h} h</button>
+          ))}
         </div>
-      )}
+        <p class="muted small">The reminder shows as a red banner when you open the app. A phone notification is also tried, but phones may not deliver it while the app is closed.</p>
+      </div>
 
       <div class="card">
         <h3>Share / backup marks</h3>
@@ -158,7 +146,9 @@ export function PlanPanel({ filter, setFilter }: Props) {
           <span><i class="dot c-superfreezer" />superfreezer</span>
           <span><b class="restow-sample">R</b> restow</span>
           <span><b class="tdiff-sample">T</b> temp differs</span>
-          <span>✓ loaded</span>
+          <span><b class="ok">✓</b> connected</span>
+          <span><b class="disc-sample">1h20</b> disconnected (time since)</span>
+          <span><b>↓</b> grey = discharged</span>
         </div>
       </div>
 
