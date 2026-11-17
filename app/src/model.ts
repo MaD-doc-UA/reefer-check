@@ -38,8 +38,21 @@ export interface Plan {
 export type Tag = 'problem' | 'out of range' | 'alarm' | 'no power' | 'damaged';
 export const TAGS: Tag[] = ['problem', 'out of range', 'alarm', 'no power', 'damaged'];
 
+/**
+ * Life of a reefer at the electro team's hands:
+ * connected (on board, plugged in) -> disconnected (unplugged, still on board) -> discharged (gone).
+ * A restowed reefer can go discharged -> connected again.
+ */
+export type Status = 'connected' | 'disconnected' | 'discharged';
+
 export interface Mark {
+  /** true only while status is 'connected' (kept for older data and simple checks) */
   loaded: boolean;
+  status?: Status;
+  disconnectedAt?: string;
+  disconnectedBy?: string;
+  dischargedAt?: string;
+  dischargedBy?: string;
   checkedPos?: string;   // position where the container was seen when marked
   foundBay?: number;     // bay group where it was physically found (if not the planned one)
   foundPos?: string;     // exact position where it was found (optional, BBRRTT)
@@ -56,7 +69,27 @@ export interface Mark {
 
 export type Marks = Record<string, Mark>;
 
-export type LogAction = 'loaded' | 'unmarked' | 'found' | 'tag+' | 'tag-' | 'note' | 'plan' | 'merge' | 'remove';
+export type LogAction =
+  | 'loaded' | 'connected' | 'disconnected' | 'discharged' | 'unmarked'
+  | 'found' | 'tag+' | 'tag-' | 'note' | 'plan' | 'merge' | 'remove';
+
+export function statusOf(m: Mark | undefined): Status | undefined {
+  if (!m) return undefined;
+  return m.status ?? (m.loaded ? 'connected' : undefined);
+}
+
+/** Disconnected longer than the reminder time and not yet confirmed as discharged. */
+export function isOverdue(m: Mark | undefined, remindHours: number, now = Date.now()): boolean {
+  return statusOf(m) === 'disconnected' && !!m?.disconnectedAt &&
+    now - Date.parse(m.disconnectedAt) >= remindHours * 3600_000;
+}
+
+export function fmtElapsed(iso: string | undefined, now = Date.now()): string {
+  if (!iso) return '';
+  const min = Math.max(0, Math.floor((now - Date.parse(iso)) / 60000));
+  const h = Math.floor(min / 60);
+  return h ? `${h}h${String(min % 60).padStart(2, '0')}` : `${min}m`;
+}
 
 /** One line of the activity log (who did what and when). */
 export interface LogEntry {
@@ -107,6 +140,11 @@ export function nowIso(): string {
 
 export function emptyMark(): Mark {
   return { loaded: false, tags: [], note: '', updatedAt: nowIso() };
+}
+
+/** Worth keeping: has a status or something to look at. */
+export function hasContent(m: Mark): boolean {
+  return m.loaded || !!m.status || hasIssue(m);
 }
 
 export function hasIssue(m: Mark | undefined): boolean {

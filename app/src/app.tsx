@@ -1,6 +1,11 @@
-import { useEffect, useState } from 'preact/hooks';
-import type { Reefer } from './model';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { isOverdue, statusOf, type Reefer } from './model';
 import { setUser, useStore } from './store';
+import { doneLabel, isDone, passes, type Filter } from './view';
+import { BayView } from './components/BayView';
+import { BayList, Issues, Search } from './components/Lists';
+import { ContainerSheet } from './components/ContainerSheet';
+import { PlanPanel } from './components/PlanPanel';
 
 function NameGate() {
   const [name, setName] = useState('');
@@ -15,11 +20,6 @@ function NameGate() {
     </div>
   );
 }
-import { passes, type Filter } from './view';
-import { BayView } from './components/BayView';
-import { BayList, Issues, Search } from './components/Lists';
-import { ContainerSheet } from './components/ContainerSheet';
-import { PlanPanel } from './components/PlanPanel';
 
 type Tab = 'bays' | 'search' | 'issues' | 'plan';
 const K_UI = 'reefer.ui.v1';
@@ -32,61 +32,121 @@ function loadUi(): { filter: Filter; quickMark: boolean } {
   return { filter: { mode: 'all', port: '' }, quickMark: false };
 }
 
+/** Best effort: a system notification while the app is open or was used recently. */
+function notify(text: string) {
+  try {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    navigator.serviceWorker?.getRegistration().then(reg => {
+      if (reg) reg.showNotification('Reefer check', { body: text, tag: 'overdue', icon: './icon-192.png' });
+      else new Notification('Reefer check', { body: text });
+    }).catch(() => undefined);
+  } catch { /* ignore */ }
+}
+
 export function App() {
-  const { plan, marks, user } = useStore();
+  const { plan, marks, user, settings } = useStore();
   const [tab, setTab] = useState<Tab>(plan ? 'bays' : 'plan');
   const [bay, setBay] = useState<number>(-1);
   const [open, setOpen] = useState<Reefer | null>(null);
   const ui0 = loadUi();
   const [filter, setFilter] = useState<Filter>(ui0.filter);
   const [quickMark, setQuickMark] = useState<boolean>(ui0.quickMark);
+  const [now, setNow] = useState(Date.now());
+  const notified = useRef(new Set<string>());
 
   useEffect(() => {
     try { localStorage.setItem(K_UI, JSON.stringify({ filter, quickMark })); } catch { /* ignore */ }
   }, [filter, quickMark]);
 
   useEffect(() => {
-    // ask the browser not to evict our data
-    navigator.storage?.persist?.().catch(() => undefined);
+    navigator.storage?.persist?.().catch(() => undefined); // ask the browser not to evict our data
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    const vis = () => { if (document.visibilityState === 'visible') setNow(Date.now()); };
+    document.addEventListener('visibilitychange', vis);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', vis); };
   }, []);
 
+  // a port must be chosen in LOAD / DISCH mode
+  useEffect(() => {
+    if (plan && filter.mode !== 'all' && !filter.port) setFilter({ ...filter, port: plan.currentPort || plan.ports[0] || '' });
+  }, [plan, filter]);
+
+  const overdue = plan ? plan.reefers.filter(r => isOverdue(marks[r.cont], settings.remindHours, now)) : [];
+  useEffect(() => {
+    const fresh = overdue.filter(r => !notified.current.has(r.cont));
+    if (fresh.length) {
+      fresh.forEach(r => notified.current.add(r.cont));
+      notify(`${overdue.length} reefer(s) disconnected over ${settings.remindHours} h: confirm discharge`);
+    }
+  }, [overdue.length]);
+
   const shown = plan ? plan.reefers.filter(r => passes(r, filter)) : [];
-  const done = shown.filter(r => marks[r.cont]?.loaded).length;
-  const filterLabel = filter.mode === 'all' ? 'All reefers' : `${filter.mode === 'pol' ? 'Load' : 'Disch.'} ${filter.port}`;
+  const done = shown.filter(r => isDone(marks[r.cont], filter)).length;
+  const disc = filter.mode === 'pod' ? shown.filter(r => statusOf(marks[r.cont]) === 'disconnected').length : 0;
+
+  const setMode = (mode: Filter['mode']) =>
+    setFilter({ mode, port: filter.port || plan?.currentPort || plan?.ports[0] || '' });
 
   return (
     <div class="app">
       <header class="top">
         <div class="title">
           <b>Reefer check</b>
-          {plan && <span class="muted small">{filterLabel} · {done}/{shown.length} loaded</span>}
+          {plan && (
+            <span class="muted small">
+              {done}/{shown.length} {doneLabel(filter)}{filter.mode === 'pod' ? ` · ${disc} disconnected` : ''}
+            </span>
+          )}
         </div>
         {plan && tab === 'bays' && (
-          <label class="switch" title="Tap a slot to mark it loaded without opening it">
+          <label class="switch" title="Tap a slot to do the next step without opening it">
             <input type="checkbox" checked={quickMark} onChange={e => setQuickMark((e.target as HTMLInputElement).checked)} />
             <span>Quick mark</span>
           </label>
         )}
       </header>
 
+      {plan && tab !== 'plan' && (
+        <div class={`modebar mode-${filter.mode}`}>
+          <div class="seg">
+            <button class={filter.mode === 'pol' ? 'on' : ''} onClick={() => setMode('pol')}>LOAD</button>
+            <button class={filter.mode === 'pod' ? 'on' : ''} onClick={() => setMode('pod')}>DISCH</button>
+            <button class={filter.mode === 'all' ? 'on' : ''} onClick={() => setMode('all')}>ALL</button>
+          </div>
+          {filter.mode !== 'all' && (
+            <select value={filter.port} onChange={e => setFilter({ ...filter, port: (e.target as HTMLSelectElement).value })} aria-label="Port">
+              {plan.ports.map(p => <option value={p}>{p}</option>)}
+            </select>
+          )}
+        </div>
+      )}
+
+      {overdue.length > 0 && tab !== 'issues' && (
+        <button class="overdue-banner" onClick={() => setTab('issues')}>
+          ⚠ {overdue.length} reefer{overdue.length > 1 ? 's' : ''} disconnected over {settings.remindHours} h. Confirm discharge ›
+        </button>
+      )}
+
       <main>
         {!plan && tab !== 'plan' && <p class="muted pad">Open a plan first (Plan tab).</p>}
         {plan && tab === 'bays' && (bay < 0
-          ? <BayList plan={plan} filter={filter} onBay={setBay} />
-          : <BayView plan={plan} bay={bay} filter={filter} quickMark={quickMark} onOpen={setOpen} onBay={setBay} />)}
+          ? <BayList plan={plan} filter={filter} onBay={setBay} now={now} />
+          : <BayView plan={plan} bay={bay} filter={filter} quickMark={quickMark} onOpen={setOpen} onBay={setBay} now={now} />)}
         {plan && tab === 'search' && <Search plan={plan} onOpen={setOpen} bay={bay} />}
-        {plan && tab === 'issues' && <Issues plan={plan} filter={filter} onOpen={setOpen} />}
-        {tab === 'plan' && <PlanPanel filter={filter} setFilter={setFilter} />}
+        {plan && tab === 'issues' && <Issues plan={plan} filter={filter} onOpen={setOpen} now={now} />}
+        {tab === 'plan' && <PlanPanel />}
       </main>
 
       <nav class="tabs">
         {([['bays', 'Bays'], ['search', 'Search'], ['issues', 'Issues'], ['plan', 'Plan']] as [Tab, string][]).map(([t, label]) => (
-          <button class={tab === t ? 'on' : ''} onClick={() => { setTab(t); if (t === 'bays' && tab === 'bays') setBay(-1); }}>{label}</button>
+          <button class={tab === t ? 'on' : ''} onClick={() => { setTab(t); if (t === 'bays' && tab === 'bays') setBay(-1); }}>
+            {label}{t === 'issues' && overdue.length > 0 ? <span class="tab-dot">{overdue.length}</span> : null}
+          </button>
         ))}
       </nav>
 
       {!user && <NameGate />}
-      {open && <ContainerSheet reefer={open} contextBay={bay >= 0 ? bay : null} onClose={() => setOpen(null)} />}
+      {open && <ContainerSheet reefer={open} contextBay={bay >= 0 ? bay : null} mode={filter.mode} onClose={() => setOpen(null)} />}
     </div>
   );
 }

@@ -1,12 +1,18 @@
 // Local persistence (only on this phone), activity log and merging marks into a new plan.
 import { useEffect, useState } from 'preact/hooks';
-import { emptyMark, hasIssue, nowIso, plugBayOf, type LogAction, type LogEntry, type Mark, type Marks, type Plan, type Tag } from './model';
+import { emptyMark, hasContent, nowIso, plugBayOf, statusOf, type LogAction, type LogEntry, type Mark, type Marks, type Plan, type Status, type Tag } from './model';
 
 const K_PLAN = 'reefer.plan.v1';
 const K_MARKS = 'reefer.marks.v1';
 const K_MERGE = 'reefer.merge.v1';
 const K_USER = 'reefer.user.v1';
 const K_LOG = 'reefer.log.v1';
+const K_SETTINGS = 'reefer.settings.v1';
+
+export interface Settings {
+  remindHours: number; // reminder after "disconnected" without "discharged"
+}
+const DEFAULT_SETTINGS: Settings = { remindHours: 2 };
 const LOG_MAX = 20000;
 
 export interface MergeReport {
@@ -18,6 +24,7 @@ export interface MergeReport {
   moved: { cont: string; from: string; to: string }[];   // marked, position changed
   notInPlan: string[];      // marked, no longer in the plan
   resolvedFound: string[];  // "found in bay X / position" now matches the plan
+  dischargedGone?: number;  // confirmed discharged and no longer in the plan (expected, not a problem)
 }
 
 interface State {
@@ -26,6 +33,7 @@ interface State {
   lastMerge: MergeReport | null;
   user: string;
   log: LogEntry[];
+  settings: Settings;
 }
 
 function load<T>(key: string, fallback: T): T {
@@ -52,7 +60,15 @@ let state: State = {
   lastMerge: load<MergeReport | null>(K_MERGE, null),
   user: load<string>(K_USER, ''),
   log: load<LogEntry[]>(K_LOG, []),
+  settings: { ...DEFAULT_SETTINGS, ...load<Partial<Settings>>(K_SETTINGS, {}) },
 };
+
+export function setRemindHours(h: number) {
+  const settings = { ...state.settings, remindHours: h };
+  state = { ...state, settings };
+  save(K_SETTINGS, settings);
+  emit();
+}
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -102,20 +118,47 @@ function writeMark(cont: string, change: Partial<Mark>) {
   const prev = state.marks[cont] ?? emptyMark();
   const next: Mark = { ...prev, ...change, updatedAt: nowIso(), updatedBy: state.user || '?' };
   const marks = { ...state.marks };
-  if (!next.loaded && !hasIssue(next)) delete marks[cont];
+  if (!hasContent(next)) delete marks[cont];
   else marks[cont] = next;
   state = { ...state, marks };
   save(K_MARKS, marks);
 }
 
-/** Toggle "loaded" and remember the position where it was checked. */
-export function toggleLoaded(cont: string, pos: string) {
-  const loaded = !state.marks[cont]?.loaded;
-  writeMark(cont, loaded
-    ? { loaded, checkedPos: pos, movedFrom: undefined, loadedAt: nowIso(), loadedBy: state.user || '?' }
-    : { loaded, checkedPos: undefined, movedFrom: undefined, loadedAt: undefined, loadedBy: undefined, foundBay: undefined, foundPos: undefined });
-  addLog([{ action: loaded ? 'loaded' : 'unmarked', cont, pos }]);
+/**
+ * Set the status of a reefer (undefined = clear it).
+ * pos = planned position now, remembered as the checked position when connecting.
+ */
+export function setStatus(cont: string, pos: string, status: Status | undefined) {
+  const by = state.user || '?';
+  const t = nowIso();
+  const prev = statusOf(state.marks[cont]);
+  if (prev === status) return;
+  let change: Partial<Mark>;
+  switch (status) {
+    case 'connected':
+      change = { status, loaded: true, checkedPos: pos, movedFrom: undefined, loadedAt: t, loadedBy: by };
+      break;
+    case 'disconnected':
+      change = { status, loaded: false, disconnectedAt: t, disconnectedBy: by, dischargedAt: undefined, dischargedBy: undefined };
+      break;
+    case 'discharged':
+      change = { status, loaded: false, dischargedAt: t, dischargedBy: by };
+      break;
+    default:
+      change = {
+        status: undefined, loaded: false, checkedPos: undefined, movedFrom: undefined, loadedAt: undefined, loadedBy: undefined,
+        disconnectedAt: undefined, disconnectedBy: undefined, dischargedAt: undefined, dischargedBy: undefined,
+        foundBay: undefined, foundPos: undefined,
+      };
+  }
+  writeMark(cont, change);
+  addLog([{ action: status ?? 'unmarked', cont, pos, detail: prev ? `was ${prev}` : undefined }]);
   emit();
+}
+
+/** Toggle "connected" (loading mode). */
+export function toggleLoaded(cont: string, pos: string) {
+  setStatus(cont, pos, statusOf(state.marks[cont]) === 'connected' ? undefined : 'connected');
 }
 
 /**
@@ -128,6 +171,7 @@ export function markFound(cont: string, plannedPos: string, bay: number, pos?: s
   const cur = state.marks[cont];
   writeMark(cont, {
     loaded: true,
+    status: 'connected',
     loadedAt: cur?.loaded ? cur.loadedAt : nowIso(),
     loadedBy: cur?.loaded ? cur.loadedBy : state.user || '?',
     foundBay: samePlace ? undefined : bay,
@@ -172,9 +216,19 @@ export function applyPlan(plan: Plan): MergeReport {
   for (const [cont, m0] of Object.entries(state.marks)) {
     const m: Mark = { ...m0 };
     const r = byCont.get(cont);
+    const st = statusOf(m);
     if (!r) {
+      if (st === 'discharged') {
+        // confirmed off board and gone from the plan: expected, keep only the log
+        report.dischargedGone = (report.dischargedGone ?? 0) + 1;
+        continue;
+      }
       m.notInPlan = true;
       report.notInPlan.push(cont);
+    } else if (st === 'disconnected' || st === 'discharged') {
+      // being discharged / restowed: the new position does not matter yet
+      m.notInPlan = false;
+      m.movedFrom = undefined;
     } else {
       m.notInPlan = false;
       if (m.foundBay !== undefined) {

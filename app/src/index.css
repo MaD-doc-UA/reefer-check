@@ -12,6 +12,9 @@
   --warn-ink: #6b4a00;
   --noslot: transparent;
   --slot-empty: #e9ecf0;
+  --disc: #f2a900;
+  --disc-ink: #9a6a00;
+  --gone: #c9ccd2;
 
   /* categories (Overview colours, softened for a phone screen) */
   --c-normal: #f6c9c9;
@@ -45,6 +48,8 @@
     --warn-bg: #3a3014;
     --warn-ink: #ffd98a;
     --slot-empty: #262a31;
+    --disc-ink: #ffc84a;
+    --gone: #4a4f58;
     color-scheme: dark;
   }
 }
@@ -61,6 +66,8 @@
   --warn-bg: #3a3014;
   --warn-ink: #ffd98a;
   --slot-empty: #262a31;
+  --disc-ink: #ffc84a;
+  --gone: #4a4f58;
   color-scheme: dark;
 }
 
@@ -219,6 +226,52 @@ input[type="search"] { width: 100%; font-size: 1.1rem; padding: 12px; margin-bot
 .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .tag { padding: 6px 10px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); font-size: 0.85rem; }
 .tag.on { background: var(--bad); border-color: var(--bad); color: #fff; }
+
+/* LOAD / DISCH mode bar */
+.modebar {
+  position: sticky; top: calc(49px + env(safe-area-inset-top)); z-index: 4;
+  display: flex; gap: 8px; align-items: center;
+  padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.modebar .seg { flex: 1; margin: 0; }
+.modebar select { min-width: 84px; font-weight: 700; }
+.mode-pol .seg button.on { background: var(--ok); }
+.mode-pod .seg button.on { background: var(--disc); color: #1b1300; }
+
+.overdue-banner {
+  display: block; width: 100%; border: 0; text-align: left;
+  padding: 10px 16px; background: var(--bad); color: #fff; font-weight: 700;
+}
+.tab-dot {
+  display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 4px; padding: 0 4px;
+  border-radius: 9px; background: var(--bad); color: #fff; font-size: 0.7rem; vertical-align: 1px;
+}
+
+/* status in the bay grid */
+.disc { outline: 3px dashed var(--disc); outline-offset: -3px; }
+.elapsed { font-weight: 800; color: #6b4a00; }
+.overdue { outline-color: var(--bad); animation: blink 1.2s steps(2, start) infinite; }
+.overdue .elapsed { color: var(--bad); }
+@keyframes blink { to { outline-color: transparent; } }
+@media (prefers-reduced-motion: reduce) { .overdue { animation: none; } }
+.gone { background: var(--gone) !important; color: var(--muted); opacity: .75; }
+.gone .no { text-decoration: line-through; }
+.gone-mark { color: var(--muted); }
+.bay-tile.has-overdue { border-color: var(--bad); }
+.disc-count { color: var(--disc-ink); font-weight: 700; }
+
+/* status in the card */
+.status-line { margin-top: 10px; }
+.st { font-weight: 700; color: var(--muted); }
+.st-connected { color: var(--ok); }
+.st-disconnected { color: var(--disc-ink); }
+.st-discharged { color: var(--muted); }
+.big-btn.warn-btn { background: var(--disc); border-color: var(--disc); color: #1b1300; }
+.stamps { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.li-warn { font-size: 0.85rem; color: var(--disc-ink); font-weight: 700; }
+.card-alert { border-color: var(--bad); box-shadow: inset 4px 0 0 var(--bad); }
+.ok { color: var(--ok); }
+.disc-sample { color: #6b4a00; background: var(--c-normal); outline: 2px dashed var(--disc); padding: 0 3px; border-radius: 3px; }
 
 .center { text-align: center; }
 .grow { flex: 1; min-width: 0; }

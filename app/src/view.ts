@@ -1,5 +1,5 @@
 // Presentation helpers: colour category (same priority as the Excel Overview) and port filter.
-import type { Reefer } from './model';
+import { statusOf, type Mark, type Reefer } from './model';
 
 export type Category = 'attention' | 'note' | 'ct' | 'ca' | 'pharma' | 'superfreezer' | 'gas' | 'normal';
 
@@ -28,14 +28,26 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   normal: 'Normal',
 };
 
+/** mode 'pol' = LOAD at port, 'pod' = DISCH at port. */
 export interface Filter {
   mode: 'all' | 'pol' | 'pod';
   port: string;
 }
 
+/** In DISCH mode restow reefers are shown too: they are unplugged and lifted in this port as well. */
 export function passes(r: Reefer, f: Filter): boolean {
   if (f.mode === 'all' || !f.port) return true;
-  return f.mode === 'pol' ? r.pol === f.port : r.pod === f.port;
+  return f.mode === 'pol' ? r.pol === f.port : r.pod === f.port || !!r.restow;
+}
+
+/** Counts as done for the progress of the current mode. */
+export function isDone(m: Mark | undefined, f: Filter): boolean {
+  const s = statusOf(m);
+  return f.mode === 'pod' ? s === 'discharged' : s === 'connected';
+}
+
+export function doneLabel(f: Filter): string {
+  return f.mode === 'pod' ? 'discharged' : 'connected';
 }
 
 export function fmtNum(n: number | null, digits = 1): string {
