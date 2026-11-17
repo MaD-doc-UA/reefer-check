@@ -30,3 +30,6 @@ npm run dev      # http://localhost:5173, тестові дані: http://localh
 npm run build    # готовий застосунок у app/dist
 ```
 Файли `.xlsm`, `.BAP`, маніфести та папки `testdata/`, `app/localtest/` не потрапляють у git, бо в них дані вантажу.
+
+## Ліцензія
+© 2026 MaD-doc-UA. All rights reserved. Без письмового дозволу автора не можна копіювати, змінювати, поширювати чи продавати код (див. [LICENSE](LICENSE)).
