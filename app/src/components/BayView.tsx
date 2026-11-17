@@ -52,8 +52,11 @@ export function BayView({ plan, bay, filter, quickMark, onOpen, onBay }: Props) 
     else onOpen(r);
   };
 
-  const box = (r: Reefer | undefined, half?: 'fore' | 'aft') => {
-    if (!r) return half ? <div class="half empty" /> : null;
+  /**
+   * One container in a slot. size20 = 'F' / 'A' for a 20' (fore / aft half of the 40' bay).
+   * half = two 20's share the slot, so each gets half the height.
+   */
+  const box = (r: Reefer, size20?: 'F' | 'A', half = false) => {
     const m = marks[r.cont];
     const dim = !passes(r, filter);
     const cls = [
@@ -63,12 +66,21 @@ export function BayView({ plan, bay, filter, quickMark, onOpen, onBay }: Props) 
       m && (m.tags.length || m.note || m.foundBay !== undefined || m.movedFrom) ? 'issue' : '',
     ].join(' ');
     return (
-      <button class={cls} onClick={() => tap(r)} title={`${r.cont} ${r.pol}-${r.pod}`}>
+      <button class={cls} onClick={() => tap(r)} title={`${r.cont} ${r.pol}-${r.pod}${size20 ? ` 20' ${size20 === 'F' ? 'fore' : 'aft'}` : ''}`}>
         <span class="no">{shortNo(r.cont)}</span>
         {!half && <span class="pod">{r.pod}</span>}
+        {size20 && <span class="t20">{half ? size20 : `20${size20}`}</span>}
         {m?.loaded && <span class="tick">✓</span>}
       </button>
     );
+  };
+
+  const slotContent = (c: CellData) => {
+    if (c.c40) return box(c.c40);
+    if (c.fore && c.aft) return <div class="split">{box(c.fore, 'F', true)}{box(c.aft, 'A', true)}</div>;
+    if (c.fore) return box(c.fore, 'F');
+    if (c.aft) return box(c.aft, 'A');
+    return null;
   };
 
   const grid = (tiers: number[], label: string) => tiers.length > 0 && (
@@ -87,9 +99,7 @@ export function BayView({ plan, bay, filter, quickMark, onOpen, onBay }: Props) 
                   const c = cells.get(key(row, t));
                   if (!c?.slot) return <td class="noslot" />;
                   return (
-                    <td class="slot">
-                      {c.c40 ? box(c.c40) : (c.fore || c.aft) ? <div class="split">{box(c.fore, 'fore')}{box(c.aft, 'aft')}</div> : null}
-                    </td>
+                    <td class="slot">{slotContent(c)}</td>
                   );
                 })}
               </tr>
@@ -111,7 +121,7 @@ export function BayView({ plan, bay, filter, quickMark, onOpen, onBay }: Props) 
       {grid(tiersWith(HOLD_TIERS), 'HOLD')}
       <p class="muted small">
         {plan.slots.some(p => { const b = +p.slice(0, 2); return b % 2 === 1 && plugBayOf(b) === bay; }) &&
-          `20' slots are split: top = fore (${pad2(bay - 1)}), bottom = aft (${pad2(bay + 1)}). `}
+          `20A / 20F = 20' container aft (${pad2(bay + 1)}) / fore (${pad2(bay - 1)}). Two 20's in one slot are shown one above the other. `}
         Faded = outside the port filter.
       </p>
       {foundHere.length > 0 && (
