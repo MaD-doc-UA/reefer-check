@@ -3,7 +3,7 @@
 export type SpecialType = 'CT' | 'CA' | 'PHARMA' | '';
 
 export interface Reefer {
-  cont: string;          // full container number, e.g. MNBU3595375 (key for marks)
+  cont: string;          // full container number, e.g. ABCU1234567 (key for marks)
   pos: string;           // BBRRTT, 6 digits
   bay: number;           // physical bay from the position (odd = 20')
   row: number;
