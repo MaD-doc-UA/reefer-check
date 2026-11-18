@@ -1,6 +1,6 @@
 // Local persistence (only on this phone), activity log and merging marks into a new plan.
 import { useEffect, useState } from 'preact/hooks';
-import { emptyMark, hasContent, nowIso, plugBayOf, statusOf, type LogAction, type LogEntry, type Mark, type Marks, type Plan, type Status, type Tag } from './model';
+import { emptyMark, hasContent, logCsv, nowIso, plugBayOf, statusOf, type LogAction, type LogEntry, type Mark, type Marks, type Plan, type Status, type Tag } from './model';
 import type { TransferPayload } from './qrTransfer';
 
 const K_PLAN = 'reefer.plan.v1';
@@ -376,10 +376,5 @@ export function applyTransfer(p: TransferPayload): { planApplied: boolean; updat
 
 /** Activity log as CSV (opens in Excel). */
 export function exportLogCsv(): Blob {
-  const q = (s: string | undefined) => `"${(s ?? '').replace(/"/g, '""')}"`;
-  const lines = ['TIME,BY,ACTION,CONTAINER,POSITION,DETAIL'];
-  for (const e of state.log) {
-    lines.push([q(new Date(e.t).toLocaleString('en-GB')), q(e.by), q(e.action), q(e.cont), q(e.pos), q(e.detail)].join(','));
-  }
-  return new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  return new Blob([logCsv(state.log)], { type: 'text/csv;charset=utf-8' });
 }

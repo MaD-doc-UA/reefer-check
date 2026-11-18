@@ -136,6 +136,23 @@ export function side20(bay: number, plugBay: number): 'fore' | 'aft' | null {
   return bay < plugBay ? 'fore' : 'aft';
 }
 
+/** Local time as "yyyy-mm-dd hh:mm[:ss]" (Excel reads it the same way in every language). */
+export function fmtLocal(iso: string | undefined, seconds = false): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}` + (seconds ? `:${p(d.getSeconds())}` : '');
+}
+
+/** Activity log as CSV text (phone and PC sender use the same columns; the Excel macro reads them). */
+export function logCsv(log: LogEntry[]): string {
+  const q = (s: string | undefined) => `"${(s ?? '').replace(/"/g, '""')}"`;
+  const lines = ['TIME,BY,ACTION,CONTAINER,POSITION,DETAIL'];
+  for (const e of log) lines.push([q(fmtLocal(e.t, true)), q(e.by), q(e.action), q(e.cont), q(e.pos), q(e.detail)].join(','));
+  return '﻿' + lines.join('\r\n');
+}
+
 export function nowIso(): string {
   return new Date().toISOString();
 }
