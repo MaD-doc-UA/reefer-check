@@ -3,6 +3,7 @@ import { parseWorkbook } from '../parseWorkbook';
 import { statusOf } from '../model';
 import { applyPlan, clearAll, dismissMerge, exportLogCsv, exportMarks, importMarks, setRemindHours, setUser, useStore } from '../store';
 import { fmtPos } from '../view';
+import { QrReceive, QrSend } from './QrTransfer';
 
 function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
@@ -20,6 +21,7 @@ export function PlanPanel() {
   const [name, setName] = useState(user);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [qr, setQr] = useState<'' | 'send' | 'receive'>('');
 
   const openPlan = async (e: Event) => {
     const input = e.target as HTMLInputElement;
@@ -55,6 +57,9 @@ export function PlanPanel() {
   };
 
   const count = (s: string) => Object.values(marks).filter(m => statusOf(m) === s).length;
+
+  if (qr === 'send') return <QrSend withPlan onClose={() => setQr('')} />;
+  if (qr === 'receive') return <QrReceive onClose={() => setQr('')} onDone={m => { setQr(''); setMsg(m); }} />;
 
   return (
     <div class="plan-panel">
@@ -100,6 +105,15 @@ export function PlanPanel() {
           ))}
         </div>
         <p class="muted small">The reminder shows as a red banner when you open the app. A phone notification is also tried, but phones may not deliver it while the app is closed.</p>
+      </div>
+
+      <div class="card">
+        <h3>Phone to phone (QR codes)</h3>
+        <p class="muted small">Send the plan and marks to another phone (also iPhone) with no network: this screen shows a loop of QR codes, the other phone reads them with its camera.</p>
+        <div class="row-inline">
+          <button class="small-btn" onClick={() => setQr('send')} disabled={!plan && !Object.keys(marks).length}>Send by QR codes</button>
+          <button class="small-btn" onClick={() => setQr('receive')}>Receive by QR codes</button>
+        </div>
       </div>
 
       <div class="card">
