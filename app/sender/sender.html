@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reefer sender</title>
+<style>
+  :root { --bg:#f4f6f8; --card:#fff; --text:#1b2430; --muted:#66717f; --line:#d9dee4; --acc:#1565c0; --bad:#c62828; --ok:#2e7d32; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 "Segoe UI", system-ui, sans-serif; }
+  header { background:#12324f; color:#fff; padding:12px 20px; }
+  header b { font-size:18px; } header span { opacity:.75; margin-left:10px; font-size:13px; }
+  main { max-width:1200px; margin:0 auto; padding:16px; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; }
+  @media (max-width: 900px) { main { grid-template-columns:1fr; } }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; min-width:0; }
+  h2 { margin:0 0 4px; font-size:17px; } .step { color:var(--acc); }
+  .muted { color:var(--muted); font-size:13px; }
+  .drop { border:2px dashed var(--line); border-radius:8px; padding:18px; text-align:center; margin:10px 0; }
+  .drop.over { border-color:var(--acc); background:#e8f0fb; }
+  .msg { margin:8px 0; } .msg.bad { color:var(--bad); }
+  .qrbox { display:flex; justify-content:center; background:#fff; padding:6px; }
+  .count { text-align:center; margin:6px 0 10px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:center; margin:6px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); border-radius:6px; background:#fff; cursor:pointer; }
+  button:disabled { opacity:.45; cursor:default; }
+  button.main { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .seg { display:inline-flex; } .seg button { border-radius:0; margin-left:-1px; } .seg button:first-child { border-radius:6px 0 0 6px; } .seg button:last-child { border-radius:0 6px 6px 0; }
+  .seg button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+  ol { padding-left:20px; margin:8px 0; } ul { margin:6px 0; padding-left:20px; }
+  video { width:100%; max-height:320px; background:#000; border-radius:6px; }
+  .tablewrap { max-height:420px; overflow:auto; border:1px solid var(--line); border-radius:6px; margin-top:10px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { padding:4px 6px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
+  th { position:sticky; top:0; background:#eef1f4; }
+  tr.st-connected td:nth-child(4) { color:var(--ok); font-weight:600; }
+  tr.st-discharged td:nth-child(4) { color:var(--muted); }
+  tr.st-disconnected td:nth-child(4) { color:#e65100; font-weight:600; }
+</style>
+</head>
+<body>
+<header><b>Reefer sender</b><span>works offline · nothing leaves this PC</span></header>
+<main>
+  <section>
+    <h2><span class="step">1.</span> PC → phone</h2>
+    <div class="muted">Open the reefer spot plan workbook (saved in Excel after the last change).</div>
+    <div class="drop" id="drop">
+      <input type="file" id="wbFile" accept=".xlsm,.xlsx">
+      <div class="muted">or drag the file here</div>
+    </div>
+    <div class="msg" id="wbMsg"></div>
+    <div id="sendBox" hidden>
+      <ol class="muted">
+        <li>On the phone: Reefer check › Plan › <b>Receive by QR codes</b>.</li>
+        <li>Hold the phone 30–50 cm from this screen until all codes are caught.</li>
+      </ol>
+      <div class="qrbox"><canvas id="qr"></canvas></div>
+      <div class="count" id="count"></div>
+      <div class="row">
+        <button id="prev">‹</button><button id="pause">Pause</button><button id="next">›</button>
+      </div>
+      <div class="row">
+        <span class="muted">Speed</span>
+        <span class="seg" id="fps"><button data-v="2">2/s</button><button data-v="3" class="on">3/s</button><button data-v="5">5/s</button></span>
+        <span class="muted">Code size</span>
+        <span class="seg" id="density"><button data-v="low">Simple</button><button data-v="normal" class="on">Normal</button><button data-v="high">Dense</button></span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="step">2.</span> Phones → PC (end of watch / loading)</h2>
+    <div class="muted">Collect the marks from one or more phones. The newest change per container wins.</div>
+    <div class="row" style="justify-content:flex-start">
+      <button id="scanBtn" class="main">Scan phone with webcam</button>
+      <label class="muted">or open marks files (.json): <input type="file" id="marksFile" accept=".json" multiple></label>
+    </div>
+    <div class="muted" id="scanMsg"></div>
+    <div id="scanBox" hidden>
+      <div class="muted">On the phone: Plan › <b>Send by QR codes</b> › <b>Marks only</b>, and hold it in front of the webcam.</div>
+      <video id="video" playsinline muted></video>
+      <div class="count" id="scanCount"></div>
+    </div>
+    <ul class="muted" id="srcList"></ul>
+    <div id="backSum"></div>
+    <div class="row" style="justify-content:flex-start">
+      <button id="saveCsv" class="main" disabled>Save CSV for Excel</button>
+      <button id="clearBack">Clear</button>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Container</th><th>Pos</th><th>POD</th><th>Status</th><th>Time</th><th>By</th><th>Found at</th><th>Tags</th><th>Note</th><th>Flag</th></tr></thead>
+        <tbody id="marksBody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<script>/*BUNDLE*/</script>
+</body>
+</html>

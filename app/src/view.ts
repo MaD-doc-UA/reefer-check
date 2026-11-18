@@ -36,6 +36,7 @@ export interface Filter {
 
 /** In DISCH mode restow reefers are shown too: they are unplugged and lifted in this port as well. */
 export function passes(r: Reefer, f: Filter): boolean {
+  if (r.carried) return f.mode === 'pod' && (!f.port || r.pod === f.port); // arrival-plan reefers to discharge: DISCH mode only
   if (f.mode === 'all' || !f.port) return true;
   return f.mode === 'pol' ? r.pol === f.port : r.pod === f.port || !!r.restow;
 }

@@ -17,3 +17,4 @@ app/dist/
 # local Claude files (contain private paths and rules)
 CLAUDE.local.md
 .claude/
+app/dist-sender/

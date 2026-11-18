@@ -19,7 +19,7 @@ interface WirePlan extends Omit<Plan, 'reefers'> { cols: string[]; rows: unknown
 
 function planToWire(p: Plan): WirePlan {
   const { reefers, ...rest } = p;
-  const cols = reefers.length ? Object.keys(reefers[0]) : [];
+  const cols = [...new Set(reefers.flatMap(r => Object.keys(r)))];
   const rows = reefers.map(r => cols.map(c => (r as unknown as Record<string, unknown>)[c]));
   return { ...rest, cols, rows };
 }

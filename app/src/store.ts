@@ -26,6 +26,7 @@ export interface MergeReport {
   notInPlan: string[];      // marked, no longer in the plan
   resolvedFound: string[];  // "found in bay X / position" now matches the plan
   dischargedGone?: number;  // confirmed discharged and no longer in the plan (expected, not a problem)
+  carried?: number;         // kept from the previous plan to discharge at the current port
 }
 
 interface State {
@@ -201,16 +202,51 @@ export function setNote(cont: string, note: string) {
   emit();
 }
 
+/**
+ * The loading plan from the planner no longer has the reefers to discharge here, but they are still on board.
+ * Keep them from the previous (arrival) plan: POD = current port, not in the new plan, not yet discharged.
+ * They are shown in DISCH mode only, at their old position, until discharged (then the next plan drops them).
+ */
+function withCarried(plan: Plan, old: Plan | null, marks: Marks): Plan {
+  if (!old) return plan;
+  const port = plan.currentPort || old.currentPort;
+  if (!port) return plan;
+  const inNew = new Set(plan.reefers.map(r => r.cont));
+  const carried = old.reefers
+    .filter(r => !inNew.has(r.cont) && r.pod === port && statusOf(marks[r.cont]) !== 'discharged')
+    .map(r => ({ ...r, carried: true }));
+  if (!carried.length) return plan;
+  return { ...plan, reefers: [...plan.reefers, ...carried] };
+}
+
+/** Drop the reefers kept from the previous plan (the officer says discharge is over). */
+export function dropCarried() {
+  const plan = state.plan;
+  if (!plan) return;
+  const gone = plan.reefers.filter(r => r.carried).map(r => r.cont);
+  const next = { ...plan, reefers: plan.reefers.filter(r => !r.carried) };
+  const marks = { ...state.marks };
+  for (const c of gone) if (marks[c]) marks[c] = { ...marks[c], notInPlan: statusOf(marks[c]) !== 'discharged' };
+  for (const c of gone) if (marks[c] && statusOf(marks[c]) === 'discharged') delete marks[c];
+  state = { ...state, plan: next, marks };
+  save(K_PLAN, next);
+  save(K_MARKS, marks);
+  addLog([{ action: 'plan', detail: `discharge list from previous plan closed (${gone.length} reefers)` }]);
+  emit();
+}
+
 /** Apply a new plan and carry the marks over by container number. */
-export function applyPlan(plan: Plan): MergeReport {
+export function applyPlan(plan0: Plan): MergeReport {
   const old = state.plan;
+  const plan = withCarried(plan0, old, state.marks);
   const oldSet = new Set(old?.reefers.map(r => r.cont) ?? []);
   const byCont = new Map(plan.reefers.map(r => [r.cont, r]));
   const marks: Marks = {};
   const report: MergeReport = {
     at: nowIso(), fileName: plan.fileName, total: plan.reefers.length,
-    added: old ? plan.reefers.filter(r => !oldSet.has(r.cont)).length : plan.reefers.length,
+    added: old ? plan.reefers.filter(r => !r.carried && !oldSet.has(r.cont)).length : plan.reefers.length,
     removedUnmarked: 0, moved: [], notInPlan: [], resolvedFound: [],
+    carried: plan.reefers.filter(r => r.carried).length,
   };
   if (old) report.removedUnmarked = old.reefers.filter(r => !byCont.has(r.cont) && !state.marks[r.cont]).length;
 
@@ -255,7 +291,7 @@ export function applyPlan(plan: Plan): MergeReport {
   save(K_PLAN, plan);
   save(K_MARKS, marks);
   save(K_MERGE, state.lastMerge);
-  addLog([{ action: 'plan', detail: `${plan.fileName}: ${plan.reefers.length} reefers` + (old ? `, ${report.moved.length} moved, ${report.notInPlan.length} not in plan` : '') }]);
+  addLog([{ action: 'plan', detail: `${plan.fileName}: ${plan.reefers.length - (report.carried ?? 0)} reefers` + (report.carried ? `, ${report.carried} to discharge kept from previous plan` : '') + (old ? `, ${report.moved.length} moved, ${report.notInPlan.length} not in plan` : '') }]);
   emit();
   return report;
 }

@@ -36,7 +36,7 @@ function ReeferRow({ r, onOpen, now }: { r: Reefer; onOpen: (r: Reefer) => void;
       <i class={`dot c-${categoryOf(r)}`} />
       <span class="li-main">
         <b>{r.cont}</b>
-        <span class="muted">bay {bayGroupLabel(r.plugBay)} · {fmtPos(r.pos)} · {r.pol}→{r.pod} · {fmtTemp(r.temp)}</span>
+        <span class="muted">bay {bayGroupLabel(r.plugBay)} · {fmtPos(r.pos)} · {r.pol}→{r.pod} · {fmtTemp(r.temp)}{r.carried ? ' · arrival plan' : ''}</span>
         {st === 'disconnected' && <span class="li-warn">disconnected {fmtElapsed(m?.disconnectedAt, now)} ago by {m?.disconnectedBy || '?'}</span>}
         {m?.foundBay !== undefined && <span class="li-note">found {m.foundPos ? fmtPos(m.foundPos) : `in bay ${bayGroupLabel(m.foundBay)}`}</span>}
         {m && (m.tags.length > 0 || m.note) && <span class="li-note">{[...m.tags, m.note].filter(Boolean).join(' · ')}</span>}

@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { parseWorkbook } from '../parseWorkbook';
 import { statusOf } from '../model';
-import { applyPlan, clearAll, dismissMerge, exportLogCsv, exportMarks, importMarks, setRemindHours, setUser, useStore } from '../store';
+import { applyPlan, clearAll, dismissMerge, dropCarried, exportLogCsv, exportMarks, importMarks, setRemindHours, setUser, useStore } from '../store';
 import { fmtPos } from '../view';
 import { QrReceive, QrSend } from './QrTransfer';
 
@@ -57,6 +57,8 @@ export function PlanPanel() {
   };
 
   const count = (s: string) => Object.values(marks).filter(m => statusOf(m) === s).length;
+  const carried = plan ? plan.reefers.filter(r => r.carried) : [];
+  const carriedLeft = carried.filter(r => statusOf(marks[r.cont]) !== 'discharged').length;
 
   if (qr === 'send') return <QrSend withPlan onClose={() => setQr('')} />;
   if (qr === 'receive') return <QrReceive onClose={() => setQr('')} onDone={m => { setQr(''); setMsg(m); }} />;
@@ -68,7 +70,7 @@ export function PlanPanel() {
         {plan ? (
           <p>
             <b>{plan.fileName}</b><br />
-            <span class="muted">opened {new Date(plan.importedAt).toLocaleString()} · {plan.reefers.length} reefers · current port {plan.currentPort || '-'} · {count('connected')} connected · {count('disconnected')} disconnected · {count('discharged')} discharged</span>
+            <span class="muted">opened {new Date(plan.importedAt).toLocaleString()} · {plan.reefers.length - carried.length} reefers · current port {plan.currentPort || '-'} · {count('connected')} connected · {count('disconnected')} disconnected · {count('discharged')} discharged</span>
           </p>
         ) : (
           <p class="muted">No plan yet. Save the spot plan in Excel (after IMPORT BAP and manifests), send the .xlsm to this phone and open it here.</p>
@@ -80,11 +82,25 @@ export function PlanPanel() {
         {msg && <p class="msg">{msg}</p>}
       </div>
 
+      {carried.length > 0 && (
+        <div class="card">
+          <h3>Discharge list from the previous plan</h3>
+          <p class="small">
+            {carried.length} reefers for {carried[0].pod} are not in this plan but were in the previous one:
+            <b> {carriedLeft} still to discharge</b>. They show in <b>DISCH</b> mode at their old positions.
+          </p>
+          <button class="small-btn" onClick={() => {
+            if (confirm(carriedLeft ? `${carriedLeft} are not marked as discharged. Close the list anyway? They will show as "not in plan".` : 'Close the discharge list?')) dropCarried();
+          }}>Discharge finished: close the list</button>
+        </div>
+      )}
+
       {lastMerge && (
         <div class="card">
           <h3>What changed with the new plan</h3>
           <ul class="plain">
-            <li>{lastMerge.total} reefers in the plan, {lastMerge.added} new</li>
+            <li>{lastMerge.total - (lastMerge.carried ?? 0)} reefers in the plan, {lastMerge.added} new</li>
+            {(lastMerge.carried ?? 0) > 0 && <li>{lastMerge.carried} to discharge kept from the previous plan (DISCH mode)</li>}
             <li>{lastMerge.removedUnmarked} removed (not marked)</li>
             <li class={lastMerge.moved.length ? 'bad' : ''}>{lastMerge.moved.length} marked containers changed position</li>
             <li class={lastMerge.notInPlan.length ? 'bad' : ''}>{lastMerge.notInPlan.length} marked containers no longer in the plan</li>

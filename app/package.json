@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:sender": "node scripts/build-sender.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.2",
