@@ -288,3 +288,20 @@ input.text { border: 1px solid var(--line); border-radius: 8px; background: var(
 .name-gate { border-radius: 16px; display: flex; flex-direction: column; gap: 10px; }
 .name-gate h2 { margin: 0; font-size: 1.2rem; }
 .big-btn:disabled { opacity: .5; }
+
+/* QR transfer */
+.qr-screen { padding: 12px; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.qr-head { display: flex; justify-content: space-between; align-items: center; }
+.qr-hint { margin: 0; }
+.qr-box { display: flex; justify-content: center; background: #fff; border-radius: 12px; padding: 8px 0; }
+.qr-box canvas { display: block; image-rendering: pixelated; }
+.qr-count { text-align: center; font-variant-numeric: tabular-nums; }
+.qr-controls { justify-content: center; margin-top: 0; }
+.qr-options { display: flex; flex-direction: column; gap: 6px; }
+.qr-options .seg { margin-bottom: 0; }
+.qr-video { position: relative; width: 100%; max-width: 560px; margin: 0 auto; aspect-ratio: 1; overflow: hidden; border-radius: 12px; background: #000; }
+.qr-video video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.qr-aim { position: absolute; inset: 12%; border: 3px solid rgba(255,255,255,.8); border-radius: 12px; pointer-events: none; }
+.qr-cells { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; }
+.qr-cells i { width: 14px; height: 14px; border-radius: 3px; background: var(--slot-empty); }
+.qr-cells i.on { background: var(--ok); }

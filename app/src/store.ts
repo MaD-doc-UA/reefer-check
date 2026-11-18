@@ -1,6 +1,7 @@
 // Local persistence (only on this phone), activity log and merging marks into a new plan.
 import { useEffect, useState } from 'preact/hooks';
 import { emptyMark, hasContent, nowIso, plugBayOf, statusOf, type LogAction, type LogEntry, type Mark, type Marks, type Plan, type Status, type Tag } from './model';
+import type { TransferPayload } from './qrTransfer';
 
 const K_PLAN = 'reefer.plan.v1';
 const K_MARKS = 'reefer.marks.v1';
@@ -295,22 +296,46 @@ const logKey = (e: LogEntry) => `${e.t}|${e.by}|${e.action}|${e.cont ?? ''}|${e.
 export function importMarks(json: string): { updated: number; logAdded: number } {
   const data = JSON.parse(json);
   if (data?.kind !== 'reefer-marks' || typeof data.marks !== 'object') throw new Error('Not a marks file.');
+  return mergeMarks(data.marks as Marks, Array.isArray(data.log) ? (data.log as LogEntry[]) : [], data.by);
+}
+
+function mergeMarks(incomingMarks: Marks, incomingLog: LogEntry[], from: string | undefined): { updated: number; logAdded: number } {
   const marks = { ...state.marks };
   let updated = 0;
-  for (const [cont, m] of Object.entries(data.marks as Marks)) {
+  for (const [cont, m] of Object.entries(incomingMarks)) {
     const mine = marks[cont];
     if (!mine || mine.updatedAt < m.updatedAt) { marks[cont] = m; updated++; }
   }
   const seen = new Set(state.log.map(logKey));
-  const incoming = (Array.isArray(data.log) ? (data.log as LogEntry[]) : []).filter(e => !seen.has(logKey(e)));
+  const incoming = incomingLog.filter(e => !seen.has(logKey(e)));
   let log = [...state.log, ...incoming].sort((a, b) => (a.t < b.t ? -1 : a.t > b.t ? 1 : 0));
   if (log.length > LOG_MAX) log = log.slice(log.length - LOG_MAX);
   state = { ...state, marks, log };
   save(K_MARKS, marks);
   save(K_LOG, log);
-  addLog([{ action: 'merge', detail: `from ${data.by || 'colleague'}: ${updated} containers, ${incoming.length} log lines` }]);
+  addLog([{ action: 'merge', detail: `from ${from || 'colleague'}: ${updated} containers, ${incoming.length} log lines` }]);
   emit();
   return { updated, logAdded: incoming.length };
+}
+
+/** What a QR transfer carries (see qrTransfer.ts). */
+export function transferPayload(withPlan: boolean, withLog: boolean): TransferPayload {
+  return {
+    kind: 'reefer-qr', v: 1, by: state.user, sentAt: nowIso(),
+    plan: withPlan && state.plan ? state.plan : undefined,
+    marks: state.marks,
+    log: withLog ? state.log : undefined,
+  };
+}
+
+/** Apply a received QR transfer: the plan (if sent and different from ours), then merge the marks. */
+export function applyTransfer(p: TransferPayload): { planApplied: boolean; updated: number; logAdded: number } {
+  let planApplied = false;
+  if (p.plan && p.plan.id !== state.plan?.id) {
+    applyPlan(p.plan);
+    planApplied = true;
+  }
+  return { planApplied, ...mergeMarks(p.marks, p.log ?? [], p.by) };
 }
 
 /** Activity log as CSV (opens in Excel). */
