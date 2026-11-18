@@ -69,7 +69,8 @@
 
   <section>
     <h2><span class="step">2.</span> Phones → PC (end of watch / loading)</h2>
-    <div class="muted">Collect the marks from one or more phones. The newest change per container wins.</div>
+    <div class="muted">Collect the marks from one or more phones (their marks files include the activity log). The newest change per container wins.
+      Then in Excel: <b>IMPORT PHONE MARKS</b> and pick both CSV files.</div>
     <div class="row" style="justify-content:flex-start">
       <button id="scanBtn" class="main">Scan phone with webcam</button>
       <label class="muted">or open marks files (.json): <input type="file" id="marksFile" accept=".json" multiple></label>
@@ -83,7 +84,8 @@
     <ul class="muted" id="srcList"></ul>
     <div id="backSum"></div>
     <div class="row" style="justify-content:flex-start">
-      <button id="saveCsv" class="main" disabled>Save CSV for Excel</button>
+      <button id="saveCsv" class="main" disabled>Save marks CSV</button>
+      <button id="saveLog" disabled>Save log CSV</button>
       <button id="clearBack">Clear</button>
     </div>
     <div class="tablewrap">

@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
 import jsQR from 'jsqr';
 import { parseWorkbook } from '../src/parseWorkbook';
 import { DENSITY, encodeFrames, FrameCollector, parseFrame, type Density } from '../src/qrTransfer';
-import { statusOf, type LogEntry, type Mark, type Marks, type Plan } from '../src/model';
+import { fmtLocal, logCsv, statusOf, type LogEntry, type Mark, type Marks, type Plan } from '../src/model';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -111,7 +111,7 @@ function mergeIn(incoming: Marks, inLog: LogEntry[] | undefined, from: string) {
   renderMarks();
 }
 
-const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
+const fmt = (iso?: string) => fmtLocal(iso);
 
 function rowsForExport() {
   const byCont = new Map(plan?.reefers.map(r => [r.cont, r]) ?? []);
@@ -127,6 +127,7 @@ function rowsForExport() {
         found: m.foundPos || (m.foundBay !== undefined ? `bay ${m.foundBay}` : ''),
         tags: m.tags.join('; '), note: m.note,
         flag: m.notInPlan ? 'not in plan' : m.movedFrom ? `moved from ${m.movedFrom}` : '',
+        updated: m.updatedAt,
       };
     })
     .sort((a, b) => a.pos.localeCompare(b.pos) || a.cont.localeCompare(b.cont));
@@ -140,22 +141,32 @@ function renderMarks() {
     ? `<b>${rows.length}</b> containers · connected ${count('connected')} · disconnected ${count('disconnected')} · discharged ${count('discharged')} · with notes/tags ${rows.filter(r => r.note || r.tags || r.found).length}`
     : 'Nothing received yet.';
   ($('saveCsv') as HTMLButtonElement).disabled = !rows.length;
+  ($('saveLog') as HTMLButtonElement).disabled = !log.length;
+  $('saveLog').textContent = `Save log CSV (${log.length})`;
   $('marksBody').innerHTML = rows.map(r =>
     `<tr class="st-${r.status}"><td>${esc(r.cont)}</td><td>${esc(r.pos)}</td><td>${esc(r.pod)}</td><td>${esc(r.status)}</td><td>${esc(r.when)}</td><td>${esc(r.by)}</td><td>${esc(r.found)}</td><td>${esc(r.tags)}</td><td>${esc(r.note)}</td><td>${esc(r.flag)}</td></tr>`,
   ).join('');
 }
 
-function saveCsv() {
-  const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
-  const lines = ['CONTAINER,POSITION,POL,POD,STATUS,TIME,BY,FOUND AT,TAGS,NOTE,FLAG'];
-  for (const r of rowsForExport()) lines.push([r.cont, r.pos, r.pol, r.pod, r.status, r.when, r.by, r.found, r.tags, r.note, r.flag].map(q).join(','));
-  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+function download(text: string, name: string) {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  const d = new Date();
-  a.download = `reefer-marks-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}.csv`;
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+  const t = fmtLocal(new Date().toISOString()); // yyyy-mm-dd hh:mm
+  a.download = `${name}-${t.slice(0, 10).replace(/-/g, '')}-${t.slice(11).replace(':', '')}.csv`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+/** Columns read by the Excel macro ImportPhoneMarks (by header name). UPDATED = newest change wins. */
+function saveCsv() {
+  const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
+  const lines = ['CONTAINER,POSITION,POL,POD,STATUS,TIME,BY,FOUND AT,TAGS,NOTE,FLAG,UPDATED'];
+  for (const r of rowsForExport()) lines.push([r.cont, r.pos, r.pol, r.pod, r.status, r.when, r.by, r.found, r.tags, r.note, r.flag, r.updated].map(q).join(','));
+  download('﻿' + lines.join('\r\n'), 'reefer-marks');
+}
+
+function saveLogCsv() {
+  download(logCsv(log), 'reefer-log');
 }
 
 async function openMarksFiles(files: FileList) {
@@ -259,6 +270,7 @@ function init() {
   mf.addEventListener('change', () => { if (mf.files?.length) openMarksFiles(mf.files); mf.value = ''; });
   $('scanBtn').addEventListener('click', startScan);
   $('saveCsv').addEventListener('click', saveCsv);
+  $('saveLog').addEventListener('click', saveLogCsv);
   $('clearBack').addEventListener('click', () => {
     if (!confirm('Clear everything received from the phones on this page?')) return;
     marks = {}; log = []; sources.length = 0; renderMarks();
