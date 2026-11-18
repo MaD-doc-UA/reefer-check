@@ -23,6 +23,8 @@ export interface Reefer {
   attention: string | null;      // note from ATTENTION sheet (null = not listed)
   posNote: string;               // note from Notes sheet (e.g. PIGTAIL)
   restow: string;                // '' | AUTO | PLANNER | ABOVE PLANNER
+  /** kept from the previous (arrival) plan: to discharge here, the new plan no longer has it */
+  carried?: boolean;
 }
 
 export interface Plan {

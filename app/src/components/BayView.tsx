@@ -45,11 +45,16 @@ export function BayView({ plan, bay, filter, quickMark, onOpen, onBay, now }: Pr
     const b = +p.slice(0, 2);
     if (plugBayOf(b) === bay) get(+p.slice(2, 4), +p.slice(4, 6)).slot = true;
   }
-  const inBay = plan.reefers.filter(r => r.plugBay === bay);
+  // reefers kept from the arrival plan exist only in DISCH mode; there they sit in their old slot
+  // (a loading reefer planned for the same slot comes later, so it gives way)
+  const inBay = plan.reefers
+    .filter(r => r.plugBay === bay && (!r.carried || filter.mode === 'pod'))
+    .sort((a, b) => Number(!!a.carried) - Number(!!b.carried));
   for (const r of inBay) {
     const c = get(r.row, r.tier);
     c.slot = true;
     const s = side20(r.bay, r.plugBay);
+    if (r.carried) { c.c40 = undefined; if (s !== 'aft') c.fore = undefined; if (s !== 'fore') c.aft = undefined; }
     if (s === 'fore') c.fore = r; else if (s === 'aft') c.aft = r; else c.c40 = r;
   }
 
