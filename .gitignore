@@ -13,3 +13,7 @@ app/localtest/
 node_modules/
 app/dist/
 *.log
+
+# local Claude files (contain private paths and rules)
+CLAUDE.local.md
+.claude/
