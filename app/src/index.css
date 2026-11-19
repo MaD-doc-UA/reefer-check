@@ -305,3 +305,5 @@ input.text { border: 1px solid var(--line); border-radius: 8px; background: var(
 .qr-cells { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; }
 .qr-cells i { width: 14px; height: 14px; border-radius: 3px; background: var(--slot-empty); }
 .qr-cells i.on { background: var(--ok); }
+.archive-row { border-top: 1px solid var(--line, #ddd); padding: 6px 0; }
+.card h4 { margin: 10px 0 2px; font-size: 14px; }

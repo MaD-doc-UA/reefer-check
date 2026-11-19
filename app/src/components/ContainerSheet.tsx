@@ -127,7 +127,8 @@ export function ContainerSheet({ reefer: r, contextBay, mode, onClose }: Props) 
           {r.attention !== null && <div><span>Attention</span><b>{r.attention || 'listed'}</b></div>}
           {r.posNote && <div><span>Position note</span><b>{r.posNote}</b></div>}
           {r.restow && <div><span>Restow</span><b class="bad">{r.restow}</b></div>}
-          {r.carried && <div><span>Plan</span><b>previous (arrival) plan, to discharge</b></div>}
+          {r.carried && <div><span>Plan</span><b>arrival plan only, to discharge</b></div>}
+          {r.arrPos && <div><span>Arrival pos</span><b class="bad">{fmtPos(r.arrPos)} (moved)</b></div>}
         </div>
 
         {m?.movedFrom && <div class="warn">Plan changed: you checked it at {fmtPos(m.movedFrom)}, new plan says {fmtPos(r.pos)}. Check again.</div>}

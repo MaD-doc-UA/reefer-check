@@ -1,7 +1,11 @@
 import { useState } from 'preact/hooks';
 import { parseWorkbook } from '../parseWorkbook';
 import { statusOf } from '../model';
-import { applyPlan, clearAll, dismissMerge, dropCarried, exportLogCsv, exportMarks, importMarks, setRemindHours, setUser, useStore } from '../store';
+import {
+  applyPlan, archivedLogCsv, archivedMarksBlob, clearAll, closePort, deleteArchived, dismissMerge, dropCarried, exportLogCsv, getState,
+  exportMarks, importMarks, isOlderPortPlan, portChangeOf, setRemindHours, setUser, useStore,
+} from '../store';
+import { askPortChange } from '../portAsk';
 import { fmtPos } from '../view';
 import { QrReceive, QrSend } from './QrTransfer';
 
@@ -17,7 +21,7 @@ function download(blob: Blob, name: string) {
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
 
 export function PlanPanel() {
-  const { plan, marks, lastMerge, user, log, settings } = useStore();
+  const { plan, marks, lastMerge, user, log, settings, archive, closedPort } = useStore();
   const [name, setName] = useState(user);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
@@ -31,8 +35,22 @@ export function PlanPanel() {
     setBusy(true); setMsg('');
     try {
       const p = await parseWorkbook(f);
+      if (isOlderPortPlan(p) && !confirm(`This file is for ${p.currentPort} and was made before you closed ${closedPort} on this phone. Open it anyway?`)) return;
+      const ch = portChangeOf(p);
+      let closed = '';
+      if (ch) {
+        const a = askPortChange(ch);
+        if (!a) return;
+        if (a === 'close') {
+          if (!closePort(p)) return;
+          closed = ch.from;
+        }
+      }
       applyPlan(p);
-      setMsg(`Loaded ${p.reefers.length} reefers from ${p.fileName}.` + (plan ? ` Marks kept: ${Object.keys(marks).length}.` : ''));
+      const st = getState();
+      setMsg(`Loaded ${p.reefers.length - p.reefers.filter(r => r.carried).length} reefers from ${p.fileName}` +
+        (p.hasArrival ? ` (+ arrival plan: ${p.reefers.filter(r => r.carried).length} to discharge).` : '.') +
+        (closed ? ` ${closed} closed and archived, ${Object.keys(st.marks).length} tags/notes kept.` : plan ? ` Marks kept: ${Object.keys(st.marks).length}.` : ''));
     } catch (err) {
       setMsg(`Could not read the file: ${(err as Error).message}`);
     } finally {
@@ -50,7 +68,7 @@ export function PlanPanel() {
     if (!f) return;
     try {
       const res = importMarks(await f.text());
-      setMsg(`Marks merged: ${res.updated} containers updated, ${res.logAdded} log lines added.`);
+      setMsg(`Marks merged: ${res.updated} containers updated, ${res.logAdded} log lines added.` + (res.skipped ? ` ${res.skipped} marks of a closed port ignored.` : ''));
     } catch (err) {
       setMsg(`Could not read marks: ${(err as Error).message}`);
     }
@@ -59,6 +77,11 @@ export function PlanPanel() {
   const count = (s: string) => Object.values(marks).filter(m => statusOf(m) === s).length;
   const carried = plan ? plan.reefers.filter(r => r.carried) : [];
   const carriedLeft = carried.filter(r => statusOf(marks[r.cont]) !== 'discharged').length;
+  const carriedPods = [...new Set(carried.map(r => r.pod))].join(', ');
+  const portOpen = !!plan && !(closedPort && closedPort.toUpperCase() === plan.currentPort.toUpperCase());
+  const portData = Object.keys(marks).length + log.filter(e => e.cont).length;
+  const archDate = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const safe = (s: string) => s.replace(/\W+/g, '_');
 
   if (qr === 'send') return <QrSend withPlan onClose={() => setQr('')} />;
   if (qr === 'receive') return <QrReceive onClose={() => setQr('')} onDone={m => { setQr(''); setMsg(m); }} />;
@@ -73,10 +96,10 @@ export function PlanPanel() {
             <span class="muted">opened {new Date(plan.importedAt).toLocaleString()} · {plan.reefers.length - carried.length} reefers · current port {plan.currentPort || '-'} · {count('connected')} connected · {count('disconnected')} disconnected · {count('discharged')} discharged</span>
           </p>
         ) : (
-          <p class="muted">No plan yet. Save the spot plan in Excel (after IMPORT BAP and manifests), send the .xlsm to this phone and open it here.</p>
+          <p class="muted">No plan yet. In Excel (after IMPORT BAP and manifests) press EXPORT TO PHONE, send the small .xlsx to this phone and open it here (the saved .xlsm works too).</p>
         )}
         <label class={`big-btn file ${busy ? 'busy' : ''}`}>
-          {busy ? 'Reading…' : plan ? 'Open new plan (marks are kept)' : 'Open plan (.xlsm)'}
+          {busy ? 'Reading…' : plan ? 'Open new plan (marks are kept)' : 'Open plan (.xlsx / .xlsm)'}
           <input type="file" accept=".xlsm,.xlsx,application/vnd.ms-excel.sheet.macroEnabled.12,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={openPlan} disabled={busy} hidden />
         </label>
         {msg && <p class="msg">{msg}</p>}
@@ -84,10 +107,10 @@ export function PlanPanel() {
 
       {carried.length > 0 && (
         <div class="card">
-          <h3>Discharge list from the previous plan</h3>
+          <h3>{plan?.hasArrival ? 'Discharge list (arrival plan)' : 'Discharge list from the previous plan'}</h3>
           <p class="small">
-            {carried.length} reefers for {carried[0].pod} are not in this plan but were in the previous one:
-            <b> {carriedLeft} still to discharge</b>. They show in <b>DISCH</b> mode at their old positions.
+            {carried.length} reefers (POD {carriedPods}) are {plan?.hasArrival ? 'in the arrival plan but not in the final plan' : 'not in this plan but were in the previous one'}:
+            <b> {carriedLeft} still to discharge</b>. They show in <b>DISCH</b> mode at their arrival positions.
           </p>
           <button class="small-btn" onClick={() => {
             if (confirm(carriedLeft ? `${carriedLeft} are not marked as discharged. Close the list anyway? They will show as "not in plan".` : 'Close the discharge list?')) dropCarried();
@@ -100,7 +123,7 @@ export function PlanPanel() {
           <h3>What changed with the new plan</h3>
           <ul class="plain">
             <li>{lastMerge.total - (lastMerge.carried ?? 0)} reefers in the plan, {lastMerge.added} new</li>
-            {(lastMerge.carried ?? 0) > 0 && <li>{lastMerge.carried} to discharge kept from the previous plan (DISCH mode)</li>}
+            {(lastMerge.carried ?? 0) > 0 && <li>{lastMerge.carried} to discharge {lastMerge.fromArrival ? 'from the arrival plan' : 'kept from the previous plan'} (DISCH mode)</li>}
             <li>{lastMerge.removedUnmarked} removed (not marked)</li>
             <li class={lastMerge.moved.length ? 'bad' : ''}>{lastMerge.moved.length} marked containers changed position</li>
             <li class={lastMerge.notInPlan.length ? 'bad' : ''}>{lastMerge.notInPlan.length} marked containers no longer in the plan</li>
@@ -109,6 +132,36 @@ export function PlanPanel() {
           </ul>
           {lastMerge.moved.slice(0, 20).map(x => <div class="small">{x.cont}: {fmtPos(x.from)} → {fmtPos(x.to)}</div>)}
           <button class="small-btn" onClick={dismissMerge}>OK</button>
+        </div>
+      )}
+
+      {plan && (
+        <div class="card">
+          <h3>Port {plan.currentPort || '-'}</h3>
+          {portOpen ? (
+            <>
+              <p class="muted small">When the port is finished (Excel: CLOSE PORT), the next plan file asks to close it here too. Or close it now:
+                marks and log go to the archive below, tags and notes of reefers still on board stay.</p>
+              <button class="small-btn" disabled={!portData} onClick={() => {
+                if (confirm(`Close ${plan.currentPort || 'this port'} on this phone? Marks and log go to the archive (last 3 ports), tags and notes of reefers on board stay.`)) {
+                  if (closePort()) setMsg(`${plan.currentPort} closed. Open the plan of the next port.`);
+                }
+              }}>Close port {plan.currentPort}</button>
+            </>
+          ) : (
+            <p class="small">{closedPort} is closed on this phone. Open the plan of the next port (EXPORT TO PHONE in Excel).</p>
+          )}
+          {archive.length > 0 && <h4>Closed ports on this phone</h4>}
+          {archive.map(a => (
+            <div class="archive-row">
+              <div class="small"><b>{a.port}</b> <span class="muted">closed {archDate(a.closedAt)} by {a.closedBy} · {Object.keys(a.marks).length} marks · {a.log.length} log lines</span></div>
+              <div class="row-inline">
+                <button class="small-btn" onClick={() => download(archivedMarksBlob(a), `reefer-marks-${safe(a.port)}-${safe(user || 'phone')}-${a.closedAt.slice(0, 10)}.json`)}>Marks file</button>
+                <button class="small-btn" disabled={!a.log.length} onClick={() => download(archivedLogCsv(a), `reefer-log-${safe(a.port)}-${a.closedAt.slice(0, 10)}.csv`)}>Log CSV</button>
+                <button class="small-btn danger" onClick={() => { if (confirm(`Delete the archive of ${a.port} from this phone?`)) deleteArchived(a.closedAt); }}>Delete</button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

@@ -9,6 +9,9 @@ const K_MERGE = 'reefer.merge.v1';
 const K_USER = 'reefer.user.v1';
 const K_LOG = 'reefer.log.v1';
 const K_SETTINGS = 'reefer.settings.v1';
+const K_PORT = 'reefer.port.v1';       // time this phone closed the last port (ISO)
+const K_ARCHIVE = 'reefer.archive.v1'; // closed ports: marks + log
+const ARCHIVE_MAX = 3;
 
 export interface Settings {
   remindHours: number; // reminder after "disconnected" without "discharged"
@@ -26,7 +29,18 @@ export interface MergeReport {
   notInPlan: string[];      // marked, no longer in the plan
   resolvedFound: string[];  // "found in bay X / position" now matches the plan
   dischargedGone?: number;  // confirmed discharged and no longer in the plan (expected, not a problem)
-  carried?: number;         // kept from the previous plan to discharge at the current port
+  carried?: number;         // only in the arrival plan (DISCHARGE sheet or previous plan): to discharge
+  fromArrival?: boolean;    // carried come from the DISCHARGE sheet of the file
+}
+
+/** Marks and log of a port closed on this phone (kept for saving later). */
+export interface ArchivedPort {
+  port: string;
+  closedAt: string;
+  closedBy: string;
+  fileName: string;
+  marks: Marks;
+  log: LogEntry[];
 }
 
 interface State {
@@ -36,6 +50,11 @@ interface State {
   user: string;
   log: LogEntry[];
   settings: Settings;
+  /** this phone closed a port at this time: older marks / log lines are not merged in again */
+  since: string | null;
+  /** port closed at `since` (the open plan may still be of that port until the next plan comes) */
+  closedPort: string;
+  archive: ArchivedPort[];
 }
 
 function load<T>(key: string, fallback: T): T {
@@ -63,6 +82,9 @@ let state: State = {
   user: load<string>(K_USER, ''),
   log: load<LogEntry[]>(K_LOG, []),
   settings: { ...DEFAULT_SETTINGS, ...load<Partial<Settings>>(K_SETTINGS, {}) },
+  since: load<{ at?: string } | null>(K_PORT, null)?.at ?? null,
+  closedPort: load<{ port?: string } | null>(K_PORT, null)?.port ?? '',
+  archive: load<ArchivedPort[]>(K_ARCHIVE, []),
 };
 
 export function setRemindHours(h: number) {
@@ -238,7 +260,8 @@ export function dropCarried() {
 /** Apply a new plan and carry the marks over by container number. */
 export function applyPlan(plan0: Plan): MergeReport {
   const old = state.plan;
-  const plan = withCarried(plan0, old, state.marks);
+  // files with the arrival plan (DISCHARGE) bring their own discharge list; older files: carry from the previous plan
+  const plan = plan0.hasArrival ? plan0 : withCarried(plan0, old, state.marks);
   const oldSet = new Set(old?.reefers.map(r => r.cont) ?? []);
   const byCont = new Map(plan.reefers.map(r => [r.cont, r]));
   const marks: Marks = {};
@@ -247,6 +270,7 @@ export function applyPlan(plan0: Plan): MergeReport {
     added: old ? plan.reefers.filter(r => !r.carried && !oldSet.has(r.cont)).length : plan.reefers.length,
     removedUnmarked: 0, moved: [], notInPlan: [], resolvedFound: [],
     carried: plan.reefers.filter(r => r.carried).length,
+    fromArrival: !!plan.hasArrival,
   };
   if (old) report.removedUnmarked = old.reefers.filter(r => !byCont.has(r.cont) && !state.marks[r.cont]).length;
 
@@ -291,7 +315,7 @@ export function applyPlan(plan0: Plan): MergeReport {
   save(K_PLAN, plan);
   save(K_MARKS, marks);
   save(K_MERGE, state.lastMerge);
-  addLog([{ action: 'plan', detail: `${plan.fileName}: ${plan.reefers.length - (report.carried ?? 0)} reefers` + (report.carried ? `, ${report.carried} to discharge kept from previous plan` : '') + (old ? `, ${report.moved.length} moved, ${report.notInPlan.length} not in plan` : '') }]);
+  addLog([{ action: 'plan', detail: `${plan.fileName}: ${plan.reefers.length - (report.carried ?? 0)} reefers` + (report.carried ? `, ${report.carried} to discharge ${plan.hasArrival ? 'from the arrival plan' : 'kept from previous plan'}` : '') + (old ? `, ${report.moved.length} moved, ${report.notInPlan.length} not in plan` : '') }]);
   emit();
   return report;
 }
@@ -313,8 +337,8 @@ export function forgetNotInPlan(cont: string) {
 
 /** Deletes plan, marks and log (the name stays). */
 export function clearAll() {
-  state = { ...state, plan: null, marks: {}, lastMerge: null, log: [] };
-  [K_PLAN, K_MARKS, K_MERGE, K_LOG].forEach(k => { try { localStorage.removeItem(k); } catch { /* ignore */ } });
+  state = { ...state, plan: null, marks: {}, lastMerge: null, log: [], since: null, closedPort: '', archive: [] };
+  [K_PLAN, K_MARKS, K_MERGE, K_LOG, K_PORT, K_ARCHIVE].forEach(k => { try { localStorage.removeItem(k); } catch { /* ignore */ } });
   emit();
 }
 
@@ -329,29 +353,37 @@ export function exportMarks(): Blob {
 const logKey = (e: LogEntry) => `${e.t}|${e.by}|${e.action}|${e.cont ?? ''}|${e.detail ?? ''}`;
 
 /** Merge marks from a colleague: newer change per container wins; logs are combined. */
-export function importMarks(json: string): { updated: number; logAdded: number } {
+export function importMarks(json: string): { updated: number; logAdded: number; skipped: number } {
   const data = JSON.parse(json);
   if (data?.kind !== 'reefer-marks' || typeof data.marks !== 'object') throw new Error('Not a marks file.');
   return mergeMarks(data.marks as Marks, Array.isArray(data.log) ? (data.log as LogEntry[]) : [], data.by);
 }
 
-function mergeMarks(incomingMarks: Marks, incomingLog: LogEntry[], from: string | undefined): { updated: number; logAdded: number } {
+/** Marks / log lines older than this belong to a closed port (closed on this phone, or CLOSE PORT in Excel). */
+export function cutoffTime(): string {
+  const a = state.since ?? '', b = state.plan?.cutoff ?? '';
+  return a > b ? a : b;
+}
+
+function mergeMarks(incomingMarks: Marks, incomingLog: LogEntry[], from: string | undefined): { updated: number; logAdded: number; skipped: number } {
   const marks = { ...state.marks };
-  let updated = 0;
+  const cut = cutoffTime();
+  let updated = 0, skipped = 0;
   for (const [cont, m] of Object.entries(incomingMarks)) {
+    if (cut && m.updatedAt < cut) { skipped++; continue; }
     const mine = marks[cont];
     if (!mine || mine.updatedAt < m.updatedAt) { marks[cont] = m; updated++; }
   }
   const seen = new Set(state.log.map(logKey));
-  const incoming = incomingLog.filter(e => !seen.has(logKey(e)));
+  const incoming = incomingLog.filter(e => !seen.has(logKey(e)) && !(cut && e.t < cut));
   let log = [...state.log, ...incoming].sort((a, b) => (a.t < b.t ? -1 : a.t > b.t ? 1 : 0));
   if (log.length > LOG_MAX) log = log.slice(log.length - LOG_MAX);
   state = { ...state, marks, log };
   save(K_MARKS, marks);
   save(K_LOG, log);
-  addLog([{ action: 'merge', detail: `from ${from || 'colleague'}: ${updated} containers, ${incoming.length} log lines` }]);
+  addLog([{ action: 'merge', detail: `from ${from || 'colleague'}: ${updated} containers, ${incoming.length} log lines` + (skipped ? `, ${skipped} marks of a closed port ignored` : '') }]);
   emit();
-  return { updated, logAdded: incoming.length };
+  return { updated, logAdded: incoming.length, skipped };
 }
 
 /** What a QR transfer carries (see qrTransfer.ts). */
@@ -364,14 +396,98 @@ export function transferPayload(withPlan: boolean, withLog: boolean): TransferPa
   };
 }
 
-/** Apply a received QR transfer: the plan (if sent and different from ours), then merge the marks. */
-export function applyTransfer(p: TransferPayload): { planApplied: boolean; updated: number; logAdded: number } {
+/**
+ * Apply a received QR transfer: the plan (if sent, different from ours and not of a port closed here), then merge the marks.
+ * closeOld: the plan is for another port and the user chose to close the open port first.
+ */
+export function applyTransfer(p: TransferPayload, closeOld = false): { planApplied: boolean; oldPlan: boolean; updated: number; logAdded: number; skipped: number } {
   let planApplied = false;
-  if (p.plan && p.plan.id !== state.plan?.id) {
+  const oldPlan = !!p.plan && isOlderPortPlan(p.plan);
+  if (p.plan && p.plan.id !== state.plan?.id && !oldPlan) {
+    if (closeOld && !closePort(p.plan)) return { planApplied, oldPlan, updated: 0, logAdded: 0, skipped: 0 };
     applyPlan(p.plan);
     planApplied = true;
   }
-  return { planApplied, ...mergeMarks(p.marks, p.log ?? [], p.by) };
+  return { planApplied, oldPlan, ...mergeMarks(p.marks, p.log ?? [], p.by) };
+}
+
+// ---------------------------------------------------------------- close port
+
+const samePort = (a?: string, b?: string) => (a ?? '').trim().toUpperCase() === (b ?? '').trim().toUpperCase();
+
+/** The plan is for another port than the open one and this phone has marks or log lines of the open port. */
+export function portChangeOf(next: Plan): { from: string; to: string } | null {
+  const cur = state.plan;
+  if (!cur || !cur.currentPort || !next.currentPort || samePort(cur.currentPort, next.currentPort)) return null;
+  if (state.closedPort && samePort(state.closedPort, cur.currentPort)) return null; // closed already (button)
+  if (!Object.keys(state.marks).length && !state.log.some(e => e.cont)) return null;
+  return { from: cur.currentPort, to: next.currentPort };
+}
+
+/** A plan of another port made before this phone closed its port (e.g. from a colleague who has not closed yet). */
+export function isOlderPortPlan(p: Plan): boolean {
+  return !!state.since && !samePort(p.currentPort, state.plan?.currentPort) && (p.exportedAt ?? p.importedAt) < state.since;
+}
+
+function saveArchive(list: ArchivedPort[]): ArchivedPort[] | null {
+  for (let n = list.length; n >= 1; n--) {
+    try {
+      localStorage.setItem(K_ARCHIVE, JSON.stringify(list.slice(0, n)));
+      return list.slice(0, n);
+    } catch { /* too big: drop the oldest */ }
+  }
+  return null;
+}
+
+/**
+ * Close the open port on this phone: its marks and log go to the archive (last 3 ports), the working
+ * marks and log are cleared. Tags and notes of reefers still on board (in `next`, or the open plan) stay,
+ * stamped with the close time, so Excel (PhoneCutoff) takes them for the next port.
+ * Returns null (nothing changed) if the archive could not be saved.
+ */
+export function closePort(next?: Plan): ArchivedPort | null {
+  const cur = state.plan;
+  const t = nowIso();
+  const entry: ArchivedPort = {
+    port: cur?.currentPort || '?', closedAt: t, closedBy: state.user || '?', fileName: cur?.fileName ?? '',
+    marks: state.marks, log: state.log,
+  };
+  const archive = saveArchive([entry, ...state.archive].slice(0, ARCHIVE_MAX));
+  if (!archive) {
+    alert('Could not archive the port on this phone (storage full). Save the marks file and the log CSV, then delete the plan and marks.');
+    return null;
+  }
+  const onBoard = new Set((next ?? cur)?.reefers.map(r => r.cont) ?? []);
+  const marks: Marks = {};
+  for (const [c, m] of Object.entries(state.marks)) {
+    if (!onBoard.has(c) || (!m.tags.length && !m.note.trim())) continue;
+    marks[c] = { ...emptyMark(), tags: [...m.tags], note: m.note, updatedAt: t, updatedBy: m.updatedBy };
+  }
+  state = { ...state, marks, log: [], since: t, closedPort: entry.port, archive, lastMerge: null };
+  save(K_MARKS, marks);
+  save(K_LOG, []);
+  save(K_PORT, { at: t, port: entry.port });
+  save(K_MERGE, null);
+  addLog([{ action: 'port', detail: `closed ${entry.port}: ${Object.keys(entry.marks).length} marks and ${entry.log.length} log lines archived, ${Object.keys(marks).length} tags/notes kept` }]);
+  emit();
+  return entry;
+}
+
+export function deleteArchived(closedAt: string) {
+  const archive = state.archive.filter(a => a.closedAt !== closedAt);
+  state = { ...state, archive };
+  save(K_ARCHIVE, archive);
+  emit();
+}
+
+/** Archived marks as a marks file (the PC sender page and "Merge marks file" read it). */
+export function archivedMarksBlob(a: ArchivedPort): Blob {
+  const data = { kind: 'reefer-marks', version: 2, exportedAt: nowIso(), by: state.user, plan: a.fileName, port: a.port, closedAt: a.closedAt, marks: a.marks, log: a.log };
+  return new Blob([JSON.stringify(data)], { type: 'application/json' });
+}
+
+export function archivedLogCsv(a: ArchivedPort): Blob {
+  return new Blob([logCsv(a.log)], { type: 'text/csv;charset=utf-8' });
 }
 
 /** Activity log as CSV (opens in Excel). */
