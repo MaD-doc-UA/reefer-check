@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
 import jsQR from 'jsqr';
 import { parseWorkbook } from '../src/parseWorkbook';
 import { DENSITY, encodeFrames, FrameCollector, parseFrame, type Density } from '../src/qrTransfer';
-import { fmtLocal, logCsv, statusOf, type LogEntry, type Mark, type Marks, type Plan } from '../src/model';
+import { fmtLocal, logCsv, statusOf, type LogEntry, type Mark, type Marks, type Plan, type Reefer } from '../src/model';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -76,10 +76,21 @@ async function openWorkbook(file: File) {
   $('wbMsg').className = 'msg';
   try {
     plan = await parseWorkbook(file);
-    const pods = new Map<string, number>();
-    for (const r of plan.reefers) pods.set(r.pod, (pods.get(r.pod) ?? 0) + 1);
-    $('wbMsg').innerHTML = `<b>${esc(plan.fileName)}</b> · ${plan.reefers.length} reefers · current port <b>${esc(plan.currentPort || '?')}</b>` +
-      `<br><span class="muted">by POD: ${[...pods].map(([p, n]) => `${esc(p)} ${n}`).join(', ')}</span>`;
+    const byPod = (list: Reefer[]) => {
+      const pods = new Map<string, number>();
+      for (const r of list) pods.set(r.pod, (pods.get(r.pod) ?? 0) + 1);
+      return [...pods].map(([p, n]) => `${esc(p)} ${n}`).join(', ');
+    };
+    const final = plan.reefers.filter(r => !r.carried);
+    const carried = plan.reefers.filter(r => r.carried);
+    const moved = final.filter(r => r.arrPos).length;
+    $('wbMsg').innerHTML = `<b>${esc(plan.fileName)}</b> · current port <b>${esc(plan.currentPort || '?')}</b>` +
+      `<br>Final plan (LOADING): <b>${final.length}</b> reefers <span class="muted">· by POD: ${byPod(final)}</span>` +
+      (plan.hasArrival
+        ? `<br>Arrival plan only (to discharge): <b>${carried.length}</b>${carried.length ? ` <span class="muted">· by POD: ${byPod(carried)}</span>` : ''}` +
+          (moved ? ` · ${moved} on board at another position than on arrival` : '')
+        : `<br><span class="muted">No arrival plan (DISCHARGE) in this file: the phones keep the discharge list from their previous plan.</span>`) +
+      (plan.cutoff ? `<br><span class="muted">Port closed in Excel ${esc(fmt(plan.cutoff))}: phone marks older than that are ignored below.</span>` : '');
     $('sendBox').hidden = false;
     rebuild();
   } catch (e) {
@@ -98,16 +109,18 @@ let log: LogEntry[] = [];
 const sources: string[] = [];
 
 function mergeIn(incoming: Marks, inLog: LogEntry[] | undefined, from: string) {
-  let updated = 0;
+  let updated = 0, old = 0;
+  const cut = plan?.cutoff ?? '';
   for (const [cont, m] of Object.entries(incoming)) {
+    if (cut && m.updatedAt < cut) { old++; continue; } // closed port (Excel CLOSE PORT would skip it too)
     const mine = marks[cont];
     if (!mine || mine.updatedAt < m.updatedAt) { marks[cont] = m; updated++; }
   }
   const key = (e: LogEntry) => `${e.t}|${e.by}|${e.action}|${e.cont ?? ''}|${e.detail ?? ''}`;
   const seen = new Set(log.map(key));
-  for (const e of inLog ?? []) if (!seen.has(key(e))) log.push(e);
+  for (const e of inLog ?? []) if (!seen.has(key(e)) && !(cut && e.t < cut)) log.push(e);
   log.sort((a, b) => (a.t < b.t ? -1 : a.t > b.t ? 1 : 0));
-  sources.push(`${from}: ${Object.keys(incoming).length} marks (${updated} newer)`);
+  sources.push(`${from}: ${Object.keys(incoming).length} marks (${updated} newer${old ? `, ${old} of the closed port ignored` : ''})`);
   renderMarks();
 }
 

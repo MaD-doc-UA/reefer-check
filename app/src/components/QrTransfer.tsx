@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import QRCode from 'qrcode';
 import jsQR from 'jsqr';
 import { DENSITY, encodeFrames, FrameCollector, parseFrame, type Density, type TransferPayload } from '../qrTransfer';
-import { applyTransfer, getState, transferPayload } from '../store';
+import { applyTransfer, getState, isOlderPortPlan, portChangeOf, transferPayload } from '../store';
+import { askPortChange } from '../portAsk';
 
 /** Keep the screen on while sending / scanning (best effort). */
 function useWakeLock() {
@@ -223,10 +224,19 @@ export function QrReceive({ onClose, onDone }: { onClose: () => void; onDone: (m
   const apply = () => {
     if (!result) return;
     const cur = getState().plan;
-    if (result.plan && cur && cur.id !== result.plan.id &&
-      !confirm(`Replace your plan "${cur.fileName}" with "${result.plan.fileName}"? Your marks are kept and merged.`)) return;
-    const r = applyTransfer(result);
-    onDone(`Received from ${result.by || 'colleague'}: ${r.planApplied ? `plan ${result.plan!.fileName}, ` : result.plan ? 'same plan, ' : ''}${r.updated} containers updated, ${r.logAdded} log lines added.`);
+    let closeOld = false;
+    if (result.plan && cur && cur.id !== result.plan.id && !isOlderPortPlan(result.plan)) {
+      const ch = portChangeOf(result.plan);
+      if (ch) {
+        const a = askPortChange(ch);
+        if (!a) return;
+        closeOld = a === 'close';
+      } else if (!confirm(`Replace your plan "${cur.fileName}" with "${result.plan.fileName}"? Your marks are kept and merged.`)) return;
+    }
+    const r = applyTransfer(result, closeOld);
+    onDone(`Received from ${result.by || 'colleague'}: ` +
+      (r.planApplied ? `plan ${result.plan!.fileName}, ` : r.oldPlan ? `plan of a port closed here not taken, ` : result.plan ? 'same plan, ' : '') +
+      `${r.updated} containers updated, ${r.logAdded} log lines added` + (r.skipped ? `, ${r.skipped} marks of a closed port ignored.` : '.'));
   };
 
   if (result) {

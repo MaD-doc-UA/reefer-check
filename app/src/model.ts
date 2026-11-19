@@ -23,8 +23,10 @@ export interface Reefer {
   attention: string | null;      // note from ATTENTION sheet (null = not listed)
   posNote: string;               // note from Notes sheet (e.g. PIGTAIL)
   restow: string;                // '' | AUTO | PLANNER | ABOVE PLANNER
-  /** kept from the previous (arrival) plan: to discharge here, the new plan no longer has it */
+  /** only in the arrival plan (DISCHARGE sheet, or the previous plan for old files): to discharge, not in the final plan */
   carried?: boolean;
+  /** position in the arrival plan when it differs from pos (restow / moved) */
+  arrPos?: string;
 }
 
 export interface Plan {
@@ -35,6 +37,12 @@ export interface Plan {
   ports: string[];       // voyage order where known
   reefers: Reefer[];
   slots: string[];       // all valid reefer positions (sheet positions), for drawing empty plugs
+  /** the file had the arrival plan (sheet DISCHARGE, workbook v24+): carried reefers come from it */
+  hasArrival?: boolean;
+  /** EXPORT TO PHONE file: time of the export (ISO) */
+  exportedAt?: string;
+  /** last CLOSE PORT in Excel (ISO): phone data older than this belongs to a closed port */
+  cutoff?: string;
 }
 
 export type Tag = 'problem' | 'out of range' | 'alarm' | 'no power' | 'damaged';
@@ -73,7 +81,7 @@ export type Marks = Record<string, Mark>;
 
 export type LogAction =
   | 'loaded' | 'connected' | 'disconnected' | 'discharged' | 'unmarked'
-  | 'found' | 'tag+' | 'tag-' | 'note' | 'plan' | 'merge' | 'remove';
+  | 'found' | 'tag+' | 'tag-' | 'note' | 'plan' | 'merge' | 'remove' | 'port';
 
 export function statusOf(m: Mark | undefined): Status | undefined {
   if (!m) return undefined;
