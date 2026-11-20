@@ -1,8 +1,9 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { parseWorkbook } from '../parseWorkbook';
 import { statusOf } from '../model';
 import {
-  applyPlan, archivedLogCsv, archivedMarksBlob, clearAll, closePort, deleteArchived, dismissMerge, dropCarried, exportLogCsv, getState,
+  applyPlan, archivedLogCsv, archivedMarksBlob, clearAll, closePort, deleteArchived, dismissMerge, dropCarried, exportBackup, exportLogCsv, getState,
+  STORAGE_LIMIT, storagePercent, storagePersisted,
   exportMarks, importMarks, isOlderPortPlan, portChangeOf, setRemindHours, setUser, useStore,
 } from '../store';
 import { askPortChange } from '../portAsk';
@@ -18,10 +19,32 @@ function download(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
+/** A button that acts only after it is held down for `ms` (no accidental taps). */
+function HoldButton({ ms, label, onDone }: { ms: number; label: string; onDone: () => void }) {
+  const [holding, setHolding] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  const stop = () => { clearTimeout(timer.current); setHolding(false); };
+  const start = (e: Event) => {
+    e.preventDefault();
+    setHolding(true);
+    timer.current = window.setTimeout(() => { setHolding(false); onDone(); }, ms);
+  };
+  useEffect(() => stop, []);
+  return (
+    <button class={`hold-btn ${holding ? 'holding' : ''}`} style={{ '--hold': `${ms}ms` }}
+      onPointerDown={start} onPointerUp={stop} onPointerLeave={stop} onPointerCancel={stop} onContextMenu={e => e.preventDefault()}>
+      <span class="hold-fill" />
+      <span class="hold-label">{holding ? 'Keep holding…' : label}</span>
+    </button>
+  );
+}
+
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
 
 export function PlanPanel() {
-  const { plan, marks, lastMerge, user, log, settings, archive, closedPort } = useStore();
+  const { plan, marks, lastMerge, user, log, settings, archive, closedPort, storageUsed } = useStore();
+  const [persisted, setPersisted] = useState<boolean | null>(null);
+  useEffect(() => { storagePersisted().then(setPersisted); }, []);
   const [name, setName] = useState(user);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
@@ -236,8 +259,29 @@ export function PlanPanel() {
       </div>
 
       <div class="card">
-        <button class="small-btn danger" onClick={() => { if (confirm('Delete the plan, ALL marks and the log from this phone? Save the log first if you need it.')) clearAll(); }}>Delete plan, marks and log from this phone</button>
+        <h3>Storage on this phone</h3>
+        <p class="small">
+          Used {(storageUsed / 1e6).toFixed(2)} of about {STORAGE_LIMIT / 1e6} MB ({storagePercent(storageUsed)}%) ·{' '}
+          {persisted === true ? <span class="ok">protected</span>
+            : persisted === false ? <span class="bad">not protected</span> : <span class="muted">protection unknown</span>}
+        </p>
+        {persisted !== true && (
+          <p class="muted small">The phone may delete the data of a site it thinks is unused. Add the app to the home screen
+            (Install / Add to Home Screen) and open it from there, and save the marks file and log CSV after each port.</p>
+        )}
         <p class="muted small">Data stays only on this phone. Nothing is sent anywhere.</p>
+      </div>
+
+      <div class="card danger-card">
+        <h3>Reset this phone</h3>
+        <p class="small">Deletes the plan, all marks, tags, notes, the log and the closed-port archive. Your name and the reminder setting stay.
+          Use it to start clean (new test, new voyage) or after a mess. It cannot be undone.</p>
+        <div class="row-inline">
+          <button class="small-btn" onClick={() => download(exportBackup(), `reefer-backup-${safe(user || 'phone')}-${stamp()}.json`)}
+            disabled={!plan && !Object.keys(marks).length && !log.length && !archive.length}>Save backup first</button>
+        </div>
+        <p class="muted small">Backup: marks, log and archive in one file. "Merge marks file" brings its marks and log back.</p>
+        <HoldButton ms={3000} label="Hold 3 s to reset this phone" onDone={() => { clearAll(); setMsg('This phone was reset. Open a plan to start.'); window.scrollTo(0, 0); }} />
       </div>
     </div>
   );

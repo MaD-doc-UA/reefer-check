@@ -307,3 +307,22 @@ input.text { border: 1px solid var(--line); border-radius: 8px; background: var(
 .qr-cells i.on { background: var(--ok); }
 .archive-row { border-top: 1px solid var(--line, #ddd); padding: 6px 0; }
 .card h4 { margin: 10px 0 2px; font-size: 14px; }
+
+/* storage problems: red, above everything, cannot be missed */
+.storage-banner {
+  display: flex; align-items: center; gap: 10px; width: 100%; border: 0; text-align: left;
+  padding: 10px 16px; background: var(--bad); color: #fff; font-weight: 700;
+}
+.storage-banner span { flex: 1; }
+.storage-banner .small-btn { color: var(--bad); background: #fff; border-color: #fff; }
+
+/* reset: hold the button down, a bar fills, release = cancel */
+.danger-card { border-color: var(--bad); }
+.hold-btn {
+  position: relative; overflow: hidden; width: 100%; margin-top: 8px; padding: 12px;
+  border: 2px solid var(--bad); border-radius: 10px; background: transparent; color: var(--bad);
+  font-weight: 700; font-size: 1rem; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+.hold-fill { position: absolute; inset: 0; width: 0; background: var(--bad); opacity: .25; }
+.hold-btn.holding .hold-fill { width: 100%; transition: width var(--hold) linear; }
+.hold-label { position: relative; }
