@@ -32,21 +32,37 @@ export const CATEGORY_LABEL: Record<Category, string> = {
 export interface Filter {
   mode: 'all' | 'pol' | 'pod';
   port: string;
+  /** CURRENT PORT of the loaded plan (not saved): restow belongs to that port only */
+  planPort?: string;
 }
 
 /**
- * Restow = lifted in this port and loaded back: listed in the RESTOW column (Excel stack-order check / planner),
- * or moved (the final plan puts a carried-on reefer in another slot than the arrival plan).
+ * Restow = lifted in this port and loaded back. Found by container number: listed in the RESTOW column
+ * (Excel stack-order check / planner), or in both the arrival and the final plan with another slot (moved)
+ * or with this port as the new POL.
  */
 export function isRestow(r: Reefer): boolean {
-  return !!r.restow || !!r.arrPos;
+  return !!r.restow || !!r.arrPos || !!r.arrPol;
 }
 
-/** In DISCH mode restow reefers are shown too: they are unplugged and lifted in this port as well. */
+/** The selected port is the plan's current port (restow and arrival slots belong to it). */
+function atPlanPort(f: Filter): boolean {
+  return !f.planPort || !f.port || f.port === f.planPort;
+}
+
+/** Restow for the work in the selected port: in LOAD / DISCH at another port it is a plain reefer. */
+export function restowHere(r: Reefer, f: Filter): boolean {
+  return isRestow(r) && (f.mode === 'all' || atPlanPort(f));
+}
+
+/**
+ * DISCH shows what is unplugged and lifted here: POD = port plus restow (at the arrival slot).
+ * LOAD shows what is plugged in here: POL = port plus restow (at the final slot), whatever POL the planner gave it.
+ */
 export function passes(r: Reefer, f: Filter): boolean {
   if (r.carried) return f.mode === 'pod' && (!f.port || r.pod === f.port); // arrival-plan reefers to discharge: DISCH mode only
   if (f.mode === 'all' || !f.port) return true;
-  return f.mode === 'pol' ? r.pol === f.port : r.pod === f.port || isRestow(r);
+  return (f.mode === 'pol' ? r.pol === f.port : r.pod === f.port) || restowHere(r, f);
 }
 
 /**
@@ -54,7 +70,7 @@ export function passes(r: Reefer, f: Filter): boolean {
  * unplugged and lifted, and its final slot may still hold another container being restowed); LOAD / ALL use the final slot.
  */
 export function placed(r: Reefer, f: Filter): Reefer {
-  if (f.mode !== 'pod' || !r.arrPos) return r;
+  if (f.mode !== 'pod' || !r.arrPos || !atPlanPort(f)) return r;
   const { bay, row, tier } = parsePos(r.arrPos);
   return { ...r, pos: r.arrPos, bay, row, tier, plugBay: bay === r.bay ? r.plugBay : plugBayOf(bay), deck: tier >= 80 };
 }

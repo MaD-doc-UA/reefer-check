@@ -1,6 +1,6 @@
 import { DECK_TIERS, HOLD_TIERS, ROWS_ORDER, bayGroupLabel, fmtElapsed, isOverdue, pad2, plugBayOf, side20, statusOf, type Plan, type Reefer, type Status } from '../model';
 import { setStatus, useStore } from '../store';
-import { categoryOf, isDone, isRestow, passes, placed, shortNo, type Filter } from '../view';
+import { categoryOf, isDone, passes, restowHere, placed, shortNo, type Filter } from '../view';
 
 interface Props {
   plan: Plan;
@@ -47,7 +47,7 @@ export function BayView({ plan, bay, filter, quickMark, onOpen, onBay, now }: Pr
   }
   // reefers kept from the arrival plan exist only in DISCH mode; there they sit in their old slot,
   // and so do moved reefers (restow) in DISCH mode (a loading reefer planned for the same slot comes later, so it gives way)
-  const atArrival = (r: Reefer) => !!r.carried || (filter.mode === 'pod' && !!r.arrPos);
+  const atArrival = (r: Reefer) => !!r.carried || placed(r, filter) !== r;
   const inBay = plan.reefers
     .filter(r => placed(r, filter).plugBay === bay && (!r.carried || filter.mode === 'pod'))
     .sort((a, b) => Number(atArrival(a)) - Number(atArrival(b)));
@@ -88,7 +88,7 @@ export function BayView({ plan, bay, filter, quickMark, onOpen, onBay, now }: Pr
       st === 'connected' ? 'loaded' : '', st === 'disconnected' ? 'disc' : '', st === 'discharged' ? 'gone' : '',
       isOverdue(m, settings.remindHours, now) ? 'overdue' : '',
       dim ? 'dim' : '',
-      isRestow(r) ? 'restow' : '', r.tempDiff ? 'tdiff' : '',
+      restowHere(r, filter) ? 'restow' : '', r.tempDiff ? 'tdiff' : '',
       m && (m.tags.length || m.note || m.foundBay !== undefined || m.movedFrom) ? 'issue' : '',
     ].join(' ');
     return (

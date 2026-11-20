@@ -1,12 +1,14 @@
 import { useState } from 'preact/hooks';
 import { BAY_GROUPS, TAGS, bayGroupLabel, fmtElapsed, pad2, plugBayOf, statusOf, type Reefer, type Status, type Tag } from '../model';
 import { markFound, setNote, setStatus, setTags, useStore } from '../store';
-import { CATEGORY_LABEL, categoryOf, fmtNum, fmtPos, fmtTemp, isRestow, type Filter } from '../view';
+import { CATEGORY_LABEL, categoryOf, fmtNum, fmtPos, fmtTemp, type Filter } from '../view';
 
 interface Props {
   reefer: Reefer;
   contextBay: number | null; // bay the user is checking right now
   mode: Filter['mode'];
+  /** restow in the selected port (main button Reconnect after discharge) */
+  restow: boolean;
   onClose: () => void;
 }
 
@@ -69,7 +71,7 @@ function slotTree(slots: string[], bay: number) {
   return { tiers, rowsAt, sizesAt };
 }
 
-export function ContainerSheet({ reefer: r, contextBay, mode, onClose }: Props) {
+export function ContainerSheet({ reefer: r, contextBay, mode, restow, onClose }: Props) {
   const { marks, plan, log } = useStore();
   const m = marks[r.cont];
   const st = statusOf(m);
@@ -129,6 +131,7 @@ export function ContainerSheet({ reefer: r, contextBay, mode, onClose }: Props) 
           {r.restow && <div><span>Restow</span><b class="bad">{r.restow}</b></div>}
           {r.carried && <div><span>Plan</span><b>arrival plan only, to discharge</b></div>}
           {r.arrPos && <div><span>Arrival pos</span><b class="bad">{fmtPos(r.arrPos)} (moved)</b></div>}
+          {r.arrPol && <div><span>Arrival POL</span><b class="bad">{r.arrPol} (restow, new POL)</b></div>}
         </div>
 
         {m?.movedFrom && <div class="warn">Plan changed: you checked it at {fmtPos(m.movedFrom)}, new plan says {fmtPos(r.pos)}. Check again.</div>}
@@ -144,7 +147,7 @@ export function ContainerSheet({ reefer: r, contextBay, mode, onClose }: Props) 
           {st === 'discharged' && <span class="st st-discharged">● Discharged</span>}
           {!st && <span class="st">○ No status</span>}
         </div>
-        {actionsFor(st, mode, isRestow(r)).map(a => (
+        {actionsFor(st, mode, restow).map(a => (
           <button
             class={`big-btn ${a.kind === 'undo' ? 'on' : a.kind === 'alt' ? 'alt' : ''} ${a.to === 'disconnected' && a.kind === 'main' ? 'warn-btn' : ''}`}
             onClick={() => { if (a.to === 'disconnected') askNotifyPermission(); setStatus(r.cont, r.pos, a.to); }}

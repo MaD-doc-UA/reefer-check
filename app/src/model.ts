@@ -27,6 +27,8 @@ export interface Reefer {
   carried?: boolean;
   /** position in the arrival plan when it differs from pos (restow / moved) */
   arrPos?: string;
+  /** POL in the arrival plan when the final plan gives it the current port as POL (restow re-planned by the planner) */
+  arrPol?: string;
 }
 
 export interface Plan {
