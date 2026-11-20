@@ -55,24 +55,50 @@ interface State {
   /** port closed at `since` (the open plan may still be of that port until the next plan comes) */
   closedPort: string;
   archive: ArchivedPort[];
+  /** characters this app keeps in localStorage */
+  storageUsed: number;
+  /** last failed save (shown as a red banner until dismissed) */
+  storageError: string;
 }
+
+/** Characters stored per key (localStorage is limited to about 5 million per site on phones). */
+const sizes: Record<string, number> = {};
+export const STORAGE_LIMIT = 5_000_000;
+/** Percent of the usual phone limit (some browsers allow more, so it is capped at 99). */
+export const storagePercent = (used: number) => Math.min(99, Math.round(used / STORAGE_LIMIT * 100));
+const usedChars = () => Object.values(sizes).reduce((a, b) => a + b, 0);
 
 function load<T>(key: string, fallback: T): T {
   try {
     const s = localStorage.getItem(key);
+    sizes[key] = s ? s.length + key.length : 0;
     return s ? (JSON.parse(s) as T) : fallback;
   } catch {
     return fallback;
   }
 }
 
-function save(key: string, value: unknown) {
+/** Writes one key; false (and a red banner) if the phone refused. */
+function store(key: string, json: string): boolean {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(key, json);
+    sizes[key] = json.length + key.length;
+    state = { ...state, storageUsed: usedChars() };
+    return true;
   } catch (e) {
     console.error('storage failed', e);
-    alert('Could not save on this phone (storage full or blocked).');
+    state = { ...state, storageError: 'Could not save on this phone (storage full or blocked). The last change may be lost if the app is closed. Save the marks file and the log CSV now.' };
+    return false;
   }
+}
+
+function save(key: string, value: unknown) {
+  store(key, JSON.stringify(value));
+}
+
+function drop(key: string) {
+  try { localStorage.removeItem(key); } catch { /* ignore */ }
+  sizes[key] = 0;
 }
 
 let state: State = {
@@ -85,7 +111,25 @@ let state: State = {
   since: load<{ at?: string } | null>(K_PORT, null)?.at ?? null,
   closedPort: load<{ port?: string } | null>(K_PORT, null)?.port ?? '',
   archive: load<ArchivedPort[]>(K_ARCHIVE, []),
+  storageUsed: 0,
+  storageError: '',
 };
+state.storageUsed = usedChars();
+
+export function dismissStorageError() {
+  state = { ...state, storageError: '' };
+  emit();
+}
+
+/** true / false = the browser will / may evict our data; null = cannot tell. */
+export async function storagePersisted(): Promise<boolean | null> {
+  try {
+    if (!navigator.storage?.persisted) return null;
+    return (await navigator.storage.persisted()) || (await navigator.storage.persist());
+  } catch {
+    return null;
+  }
+}
 
 export function setRemindHours(h: number) {
   const settings = { ...state.settings, remindHours: h };
@@ -335,18 +379,39 @@ export function forgetNotInPlan(cont: string) {
   emit();
 }
 
-/** Deletes plan, marks and log (the name stays). */
+/** Reset this phone: deletes plan, marks, log and closed-port archive (the name and settings stay). */
 export function clearAll() {
-  state = { ...state, plan: null, marks: {}, lastMerge: null, log: [], since: null, closedPort: '', archive: [] };
-  [K_PLAN, K_MARKS, K_MERGE, K_LOG, K_PORT, K_ARCHIVE].forEach(k => { try { localStorage.removeItem(k); } catch { /* ignore */ } });
+  [K_PLAN, K_MARKS, K_MERGE, K_LOG, K_PORT, K_ARCHIVE].forEach(drop);
+  state = { ...state, plan: null, marks: {}, lastMerge: null, log: [], since: null, closedPort: '', archive: [], storageError: '', storageUsed: usedChars() };
   emit();
+}
+
+/** Everything a reset deletes, as one file. "Merge marks file" reads its marks and log back. */
+export function exportBackup(): Blob {
+  const data = {
+    kind: 'reefer-marks', version: 2, backup: true, exportedAt: nowIso(), by: state.user, plan: state.plan?.fileName ?? '',
+    marks: state.marks, log: state.log, archive: state.archive,
+  };
+  return new Blob([JSON.stringify(data)], { type: 'application/json' });
+}
+
+/**
+ * Marks and log of the open port only: what was marked before the last port close (on this phone or
+ * CLOSE PORT in Excel) is not passed on, so a colleague never gets old ports back.
+ */
+function currentSession(): { marks: Marks; log: LogEntry[] } {
+  const cut = cutoffTime();
+  if (!cut) return { marks: state.marks, log: state.log };
+  const marks: Marks = {};
+  for (const [c, m] of Object.entries(state.marks)) if (m.updatedAt >= cut) marks[c] = m;
+  return { marks, log: state.log.filter(e => e.t >= cut) };
 }
 
 // ---------------------------------------------------------------- sharing
 
 /** Marks + log as a JSON file (backup / sharing with a colleague). */
 export function exportMarks(): Blob {
-  const data = { kind: 'reefer-marks', version: 2, exportedAt: nowIso(), by: state.user, plan: state.plan?.fileName ?? '', marks: state.marks, log: state.log };
+  const data = { kind: 'reefer-marks', version: 2, exportedAt: nowIso(), by: state.user, plan: state.plan?.fileName ?? '', ...currentSession() };
   return new Blob([JSON.stringify(data)], { type: 'application/json' });
 }
 
@@ -388,11 +453,12 @@ function mergeMarks(incomingMarks: Marks, incomingLog: LogEntry[], from: string 
 
 /** What a QR transfer carries (see qrTransfer.ts). */
 export function transferPayload(withPlan: boolean, withLog: boolean): TransferPayload {
+  const cur = currentSession();
   return {
     kind: 'reefer-qr', v: 1, by: state.user, sentAt: nowIso(),
     plan: withPlan && state.plan ? state.plan : undefined,
-    marks: state.marks,
-    log: withLog ? state.log : undefined,
+    marks: cur.marks,
+    log: withLog ? cur.log : undefined,
   };
 }
 
@@ -432,7 +498,9 @@ export function isOlderPortPlan(p: Plan): boolean {
 function saveArchive(list: ArchivedPort[]): ArchivedPort[] | null {
   for (let n = list.length; n >= 1; n--) {
     try {
-      localStorage.setItem(K_ARCHIVE, JSON.stringify(list.slice(0, n)));
+      const json = JSON.stringify(list.slice(0, n));
+      localStorage.setItem(K_ARCHIVE, json);
+      sizes[K_ARCHIVE] = json.length + K_ARCHIVE.length;
       return list.slice(0, n);
     } catch { /* too big: drop the oldest */ }
   }
@@ -454,7 +522,8 @@ export function closePort(next?: Plan): ArchivedPort | null {
   };
   const archive = saveArchive([entry, ...state.archive].slice(0, ARCHIVE_MAX));
   if (!archive) {
-    alert('Could not archive the port on this phone (storage full). Save the marks file and the log CSV, then delete the plan and marks.');
+    state = { ...state, storageError: 'Could not close the port: no room to archive it on this phone. Save the marks file and the log CSV, delete old archives (Plan tab), then try again.' };
+    emit();
     return null;
   }
   const onBoard = new Set((next ?? cur)?.reefers.map(r => r.cont) ?? []);

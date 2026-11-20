@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { isOverdue, statusOf, type Reefer } from './model';
-import { setUser, useStore } from './store';
+import { dismissStorageError, setUser, STORAGE_LIMIT, storagePercent, useStore } from './store';
 import { doneLabel, isDone, passes, restowHere, type Filter } from './view';
 import { BayView } from './components/BayView';
 import { BayList, Issues, Search } from './components/Lists';
@@ -44,7 +44,7 @@ function notify(text: string) {
 }
 
 export function App() {
-  const { plan, marks, user, settings } = useStore();
+  const { plan, marks, user, settings, storageError, storageUsed } = useStore();
   const [tab, setTab] = useState<Tab>(plan ? 'bays' : 'plan');
   const [bay, setBay] = useState<number>(-1);
   const [open, setOpen] = useState<Reefer | null>(null);
@@ -120,6 +120,17 @@ export function App() {
             </select>
           )}
         </div>
+      )}
+
+      {storageError ? (
+        <div class="storage-banner" role="alert">
+          <span>⚠ {storageError}</span>
+          <button class="small-btn" onClick={dismissStorageError}>OK</button>
+        </div>
+      ) : storageUsed > STORAGE_LIMIT * 0.8 && (
+        <button class="storage-banner" onClick={() => setTab('plan')}>
+          ⚠ Phone storage for this app is {storagePercent(storageUsed)}% full. Save the log and delete closed-port archives (Plan tab) ›
+        </button>
       )}
 
       {overdue.length > 0 && tab !== 'issues' && (
