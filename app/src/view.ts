@@ -1,5 +1,5 @@
 // Presentation helpers: colour category (same priority as the Excel Overview) and port filter.
-import { statusOf, type Mark, type Reefer } from './model';
+import { parsePos, plugBayOf, statusOf, type Mark, type Reefer } from './model';
 
 export type Category = 'attention' | 'note' | 'ct' | 'ca' | 'pharma' | 'superfreezer' | 'gas' | 'normal';
 
@@ -34,17 +34,38 @@ export interface Filter {
   port: string;
 }
 
+/**
+ * Restow = lifted in this port and loaded back: listed in the RESTOW column (Excel stack-order check / planner),
+ * or moved (the final plan puts a carried-on reefer in another slot than the arrival plan).
+ */
+export function isRestow(r: Reefer): boolean {
+  return !!r.restow || !!r.arrPos;
+}
+
 /** In DISCH mode restow reefers are shown too: they are unplugged and lifted in this port as well. */
 export function passes(r: Reefer, f: Filter): boolean {
   if (r.carried) return f.mode === 'pod' && (!f.port || r.pod === f.port); // arrival-plan reefers to discharge: DISCH mode only
   if (f.mode === 'all' || !f.port) return true;
-  return f.mode === 'pol' ? r.pol === f.port : r.pod === f.port || !!r.restow;
+  return f.mode === 'pol' ? r.pol === f.port : r.pod === f.port || isRestow(r);
 }
 
-/** Counts as done for the progress of the current mode. */
+/**
+ * Where the reefer is drawn: in DISCH mode a moved reefer sits in its arrival slot (that is where it is
+ * unplugged and lifted, and its final slot may still hold another container being restowed); LOAD / ALL use the final slot.
+ */
+export function placed(r: Reefer, f: Filter): Reefer {
+  if (f.mode !== 'pod' || !r.arrPos) return r;
+  const { bay, row, tier } = parsePos(r.arrPos);
+  return { ...r, pos: r.arrPos, bay, row, tier, plugBay: bay === r.bay ? r.plugBay : plugBayOf(bay), deck: tier >= 80 };
+}
+
+/**
+ * Counts as done for the progress of the current mode.
+ * DISCH: discharged, or reconnected after being discharged (restow loaded back; the port close clears old statuses).
+ */
 export function isDone(m: Mark | undefined, f: Filter): boolean {
   const s = statusOf(m);
-  return f.mode === 'pod' ? s === 'discharged' : s === 'connected';
+  return f.mode === 'pod' ? s === 'discharged' || (s === 'connected' && !!m?.dischargedAt) : s === 'connected';
 }
 
 export function doneLabel(f: Filter): string {

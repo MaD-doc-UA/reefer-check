@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { BAY_GROUPS, TAGS, bayGroupLabel, fmtElapsed, pad2, plugBayOf, statusOf, type Reefer, type Status, type Tag } from '../model';
 import { markFound, setNote, setStatus, setTags, useStore } from '../store';
-import { CATEGORY_LABEL, categoryOf, fmtNum, fmtPos, fmtTemp, type Filter } from '../view';
+import { CATEGORY_LABEL, categoryOf, fmtNum, fmtPos, fmtTemp, isRestow, type Filter } from '../view';
 
 interface Props {
   reefer: Reefer;
@@ -144,7 +144,7 @@ export function ContainerSheet({ reefer: r, contextBay, mode, onClose }: Props) 
           {st === 'discharged' && <span class="st st-discharged">● Discharged</span>}
           {!st && <span class="st">○ No status</span>}
         </div>
-        {actionsFor(st, mode, !!r.restow).map(a => (
+        {actionsFor(st, mode, isRestow(r)).map(a => (
           <button
             class={`big-btn ${a.kind === 'undo' ? 'on' : a.kind === 'alt' ? 'alt' : ''} ${a.to === 'disconnected' && a.kind === 'main' ? 'warn-btn' : ''}`}
             onClick={() => { if (a.to === 'disconnected') askNotifyPermission(); setStatus(r.cont, r.pos, a.to); }}

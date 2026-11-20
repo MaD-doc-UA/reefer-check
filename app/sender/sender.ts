@@ -88,7 +88,7 @@ async function openWorkbook(file: File) {
       `<br>Final plan (LOADING): <b>${final.length}</b> reefers <span class="muted">· by POD: ${byPod(final)}</span>` +
       (plan.hasArrival
         ? `<br>Arrival plan only (to discharge): <b>${carried.length}</b>${carried.length ? ` <span class="muted">· by POD: ${byPod(carried)}</span>` : ''}` +
-          (moved ? ` · ${moved} on board at another position than on arrival` : '')
+          (moved ? ` · ${moved} moved (other position than on arrival: restow on the phones)` : '')
         : `<br><span class="muted">No arrival plan (DISCHARGE) in this file: the phones keep the discharge list from their previous plan.</span>`) +
       (plan.cutoff ? `<br><span class="muted">Port closed in Excel ${esc(fmt(plan.cutoff))}: phone marks older than that are ignored below.</span>` : '');
     $('sendBox').hidden = false;
