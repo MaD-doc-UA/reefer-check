@@ -1,14 +1,14 @@
 import { useState } from 'preact/hooks';
 import { BAY_GROUPS, bayGroupLabel, fmtElapsed, isOverdue, statusOf, type Plan, type Reefer } from '../model';
 import { forgetNotInPlan, useStore } from '../store';
-import { categoryOf, fmtPos, fmtTemp, isDone, passes, type Filter } from '../view';
+import { categoryOf, fmtPos, fmtTemp, isDone, isRestow, passes, placed, type Filter } from '../view';
 
 export function BayList({ plan, filter, onBay, now }: { plan: Plan; filter: Filter; onBay: (b: number) => void; now: number }) {
   const { marks, settings } = useStore();
   return (
     <div class="bay-list">
       {BAY_GROUPS.map(b => {
-        const rs = plan.reefers.filter(r => r.plugBay === b && passes(r, filter));
+        const rs = plan.reefers.filter(r => placed(r, filter).plugBay === b && passes(r, filter));
         const done = rs.filter(r => isDone(marks[r.cont], filter)).length;
         const disc = rs.filter(r => statusOf(marks[r.cont]) === 'disconnected').length;
         const overdue = rs.filter(r => isOverdue(marks[r.cont], settings.remindHours, now)).length;
@@ -83,7 +83,7 @@ export function Issues({ plan, filter, onOpen, now }: { plan: Plan; filter: Filt
   const notInPlan = Object.entries(marks).filter(([c, m]) => m.notInPlan && !byCont.has(c));
   const attention = rs(r => r.attention !== null);
   const tdiff = rs(r => r.tempDiff);
-  const restow = rs(r => !!r.restow);
+  const restow = rs(isRestow);
   const special = rs(r => ['ct', 'ca', 'pharma'].includes(categoryOf(r)));
 
   const section = (title: string, list: Reefer[], hint?: string, cls = '') => list.length > 0 && (

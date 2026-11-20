@@ -1,6 +1,6 @@
 import { DECK_TIERS, HOLD_TIERS, ROWS_ORDER, bayGroupLabel, fmtElapsed, isOverdue, pad2, plugBayOf, side20, statusOf, type Plan, type Reefer, type Status } from '../model';
 import { setStatus, useStore } from '../store';
-import { categoryOf, isDone, passes, shortNo, type Filter } from '../view';
+import { categoryOf, isDone, isRestow, passes, placed, shortNo, type Filter } from '../view';
 
 interface Props {
   plan: Plan;
@@ -45,16 +45,18 @@ export function BayView({ plan, bay, filter, quickMark, onOpen, onBay, now }: Pr
     const b = +p.slice(0, 2);
     if (plugBayOf(b) === bay) get(+p.slice(2, 4), +p.slice(4, 6)).slot = true;
   }
-  // reefers kept from the arrival plan exist only in DISCH mode; there they sit in their old slot
-  // (a loading reefer planned for the same slot comes later, so it gives way)
+  // reefers kept from the arrival plan exist only in DISCH mode; there they sit in their old slot,
+  // and so do moved reefers (restow) in DISCH mode (a loading reefer planned for the same slot comes later, so it gives way)
+  const atArrival = (r: Reefer) => !!r.carried || (filter.mode === 'pod' && !!r.arrPos);
   const inBay = plan.reefers
-    .filter(r => r.plugBay === bay && (!r.carried || filter.mode === 'pod'))
-    .sort((a, b) => Number(!!a.carried) - Number(!!b.carried));
+    .filter(r => placed(r, filter).plugBay === bay && (!r.carried || filter.mode === 'pod'))
+    .sort((a, b) => Number(atArrival(a)) - Number(atArrival(b)));
   for (const r of inBay) {
-    const c = get(r.row, r.tier);
+    const p = placed(r, filter);
+    const c = get(p.row, p.tier);
     c.slot = true;
-    const s = side20(r.bay, r.plugBay);
-    if (r.carried) { c.c40 = undefined; if (s !== 'aft') c.fore = undefined; if (s !== 'fore') c.aft = undefined; }
+    const s = side20(p.bay, p.plugBay);
+    if (atArrival(r)) { c.c40 = undefined; if (s !== 'aft') c.fore = undefined; if (s !== 'fore') c.aft = undefined; }
     if (s === 'fore') c.fore = r; else if (s === 'aft') c.aft = r; else c.c40 = r;
   }
 
@@ -86,7 +88,7 @@ export function BayView({ plan, bay, filter, quickMark, onOpen, onBay, now }: Pr
       st === 'connected' ? 'loaded' : '', st === 'disconnected' ? 'disc' : '', st === 'discharged' ? 'gone' : '',
       isOverdue(m, settings.remindHours, now) ? 'overdue' : '',
       dim ? 'dim' : '',
-      r.restow ? 'restow' : '', r.tempDiff ? 'tdiff' : '',
+      isRestow(r) ? 'restow' : '', r.tempDiff ? 'tdiff' : '',
       m && (m.tags.length || m.note || m.foundBay !== undefined || m.movedFrom) ? 'issue' : '',
     ].join(' ');
     return (
