@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { isOverdue, statusOf, type Reefer } from './model';
 import { setUser, useStore } from './store';
-import { doneLabel, isDone, passes, type Filter } from './view';
+import { doneLabel, isDone, passes, restowHere, type Filter } from './view';
 import { BayView } from './components/BayView';
 import { BayList, Issues, Search } from './components/Lists';
 import { ContainerSheet } from './components/ContainerSheet';
@@ -49,14 +49,15 @@ export function App() {
   const [bay, setBay] = useState<number>(-1);
   const [open, setOpen] = useState<Reefer | null>(null);
   const ui0 = loadUi();
-  const [filter, setFilter] = useState<Filter>(ui0.filter);
+  const [uiFilter, setFilter] = useState<Filter>(ui0.filter);
+  const filter: Filter = { ...uiFilter, planPort: plan?.currentPort };
   const [quickMark, setQuickMark] = useState<boolean>(ui0.quickMark);
   const [now, setNow] = useState(Date.now());
   const notified = useRef(new Set<string>());
 
   useEffect(() => {
-    try { localStorage.setItem(K_UI, JSON.stringify({ filter, quickMark })); } catch { /* ignore */ }
-  }, [filter, quickMark]);
+    try { localStorage.setItem(K_UI, JSON.stringify({ filter: uiFilter, quickMark })); } catch { /* ignore */ }
+  }, [uiFilter, quickMark]);
 
   useEffect(() => {
     navigator.storage?.persist?.().catch(() => undefined); // ask the browser not to evict our data
@@ -68,8 +69,8 @@ export function App() {
 
   // a port must be chosen in LOAD / DISCH mode
   useEffect(() => {
-    if (plan && filter.mode !== 'all' && !filter.port) setFilter({ ...filter, port: plan.currentPort || plan.ports[0] || '' });
-  }, [plan, filter]);
+    if (plan && uiFilter.mode !== 'all' && !uiFilter.port) setFilter({ ...uiFilter, port: plan.currentPort || plan.ports[0] || '' });
+  }, [plan, uiFilter]);
 
   const overdue = plan ? plan.reefers.filter(r => isOverdue(marks[r.cont], settings.remindHours, now)) : [];
   useEffect(() => {
@@ -114,7 +115,7 @@ export function App() {
             <button class={filter.mode === 'all' ? 'on' : ''} onClick={() => setMode('all')}>ALL</button>
           </div>
           {filter.mode !== 'all' && (
-            <select value={filter.port} onChange={e => setFilter({ ...filter, port: (e.target as HTMLSelectElement).value })} aria-label="Port">
+            <select value={filter.port} onChange={e => setFilter({ ...uiFilter, port: (e.target as HTMLSelectElement).value })} aria-label="Port">
               {plan.ports.map(p => <option value={p}>{p}</option>)}
             </select>
           )}
@@ -146,7 +147,7 @@ export function App() {
       </nav>
 
       {!user && <NameGate />}
-      {open && <ContainerSheet reefer={open} contextBay={bay >= 0 ? bay : null} mode={filter.mode} onClose={() => setOpen(null)} />}
+      {open && <ContainerSheet reefer={open} contextBay={bay >= 0 ? bay : null} mode={filter.mode} restow={restowHere(open, filter)} onClose={() => setOpen(null)} />}
     </div>
   );
 }

@@ -162,8 +162,11 @@ export async function parseWorkbook(file: File): Promise<Plan> {
     const carried: Reefer[] = [];
     for (const a of arrival) {
       const f = byCont.get(a.cont);
-      if (!f) carried.push({ ...a, carried: true, restow: '' });
-      else if (f.pos !== a.pos) f.arrPos = a.pos;
+      if (!f) { carried.push({ ...a, carried: true, restow: '' }); continue; }
+      // same container (by number) in both plans: lifted and loaded back in this port when its slot changed,
+      // or when the planner gave it this port as the new POL (it can even stay in the same slot)
+      if (f.pos !== a.pos) f.arrPos = a.pos;
+      if (currentPort && f.pol === currentPort && a.pol !== currentPort) f.arrPol = a.pol;
     }
     reefers = [...final, ...carried];
   }

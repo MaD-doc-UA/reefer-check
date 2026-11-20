@@ -83,12 +83,12 @@ async function openWorkbook(file: File) {
     };
     const final = plan.reefers.filter(r => !r.carried);
     const carried = plan.reefers.filter(r => r.carried);
-    const moved = final.filter(r => r.arrPos).length;
+    const moved = final.filter(r => r.arrPos || r.arrPol).length;
     $('wbMsg').innerHTML = `<b>${esc(plan.fileName)}</b> · current port <b>${esc(plan.currentPort || '?')}</b>` +
       `<br>Final plan (LOADING): <b>${final.length}</b> reefers <span class="muted">· by POD: ${byPod(final)}</span>` +
       (plan.hasArrival
         ? `<br>Arrival plan only (to discharge): <b>${carried.length}</b>${carried.length ? ` <span class="muted">· by POD: ${byPod(carried)}</span>` : ''}` +
-          (moved ? ` · ${moved} moved (other position than on arrival: restow on the phones)` : '')
+          (moved ? ` · ${moved} restow (moved, or this port as the new POL: restow on the phones)` : '')
         : `<br><span class="muted">No arrival plan (DISCHARGE) in this file: the phones keep the discharge list from their previous plan.</span>`) +
       (plan.cutoff ? `<br><span class="muted">Port closed in Excel ${esc(fmt(plan.cutoff))}: phone marks older than that are ignored below.</span>` : '');
     $('sendBox').hidden = false;

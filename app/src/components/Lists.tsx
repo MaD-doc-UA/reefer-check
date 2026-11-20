@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { BAY_GROUPS, bayGroupLabel, fmtElapsed, isOverdue, statusOf, type Plan, type Reefer } from '../model';
 import { forgetNotInPlan, useStore } from '../store';
-import { categoryOf, fmtPos, fmtTemp, isDone, isRestow, passes, placed, type Filter } from '../view';
+import { categoryOf, fmtPos, fmtTemp, isDone, passes, restowHere, placed, type Filter } from '../view';
 
 export function BayList({ plan, filter, onBay, now }: { plan: Plan; filter: Filter; onBay: (b: number) => void; now: number }) {
   const { marks, settings } = useStore();
@@ -83,7 +83,7 @@ export function Issues({ plan, filter, onOpen, now }: { plan: Plan; filter: Filt
   const notInPlan = Object.entries(marks).filter(([c, m]) => m.notInPlan && !byCont.has(c));
   const attention = rs(r => r.attention !== null);
   const tdiff = rs(r => r.tempDiff);
-  const restow = rs(isRestow);
+  const restow = rs(r => restowHere(r, filter));
   const special = rs(r => ['ct', 'ca', 'pharma'].includes(categoryOf(r)));
 
   const section = (title: string, list: Reefer[], hint?: string, cls = '') => list.length > 0 && (
