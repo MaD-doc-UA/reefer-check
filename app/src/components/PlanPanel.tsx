@@ -10,6 +10,7 @@ import { askPortChange } from '../portAsk';
 import { fmtPos } from '../view';
 import { QrReceive, QrSend } from './QrTransfer';
 import { iosBrowser, isIOS, isStandalone } from '../platform';
+import { NAME_INPUT } from '../nameInput';
 
 /** iPhone in a browser tab: how to get the app on the home screen (own window, data kept). */
 function IosInstall() {
@@ -263,7 +264,7 @@ export function PlanPanel() {
         <h3>Your name</h3>
         <p class="muted small">Written next to every mark in the log. Not an account: it is stored only on this phone.</p>
         <div class="row-inline">
-          <input class="grow text" value={name} maxLength={40} placeholder="e.g. ETO Andrii" onInput={e => setName((e.target as HTMLInputElement).value)} />
+          <input class="grow text" defaultValue={user} {...NAME_INPUT} onInput={e => setName((e.target as HTMLInputElement).value)} />
           <button class="small-btn" onClick={() => setUser(name)} disabled={!name.trim() || name.trim() === user}>Save</button>
         </div>
       </div>
@@ -277,7 +278,7 @@ export function PlanPanel() {
           <span><i class="dot c-pharma" />pharma</span>
           <span><i class="dot c-ct" />CT</span>
           <span><i class="dot c-ca" />CA / O2-CO2</span>
-          <span><i class="dot c-superfreezer" />superfreezer</span>
+          <span><i class="dot c-superfreezer" />superfreezer (SF)</span>
           <span><b class="restow-sample">R</b> restow</span>
           <span><b class="tdiff-sample">T</b> temp differs</span>
           <span><b class="ok">✓</b> connected</span>

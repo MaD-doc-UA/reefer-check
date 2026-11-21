@@ -10,6 +10,8 @@ export function categoryOf(r: Reefer): Category {
     const s = r.special.toUpperCase();
     if (s === 'CT') return 'ct';
     if (s === 'CA') return 'ca';
+    // v30 workbook: superfreezers come onto Special as SF (gas reefers as CA)
+    if (s === 'SF' || s === 'SUPERFREEZER') return 'superfreezer';
     return 'pharma';
   }
   if (r.temp !== null && r.temp <= -50) return 'superfreezer';
