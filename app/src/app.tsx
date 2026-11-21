@@ -4,8 +4,13 @@ import { dismissStorageError, setUser, STORAGE_LIMIT, storagePercent, useStore }
 import { doneLabel, isDone, passes, restowHere, type Filter } from './view';
 import { BayView } from './components/BayView';
 import { BayList, Issues, Search } from './components/Lists';
+import { Overview } from './components/Overview';
 import { ContainerSheet } from './components/ContainerSheet';
 import { PlanPanel } from './components/PlanPanel';
+import { isIOS, isStandalone } from './platform';
+
+/** iPhone browser tab (not the home-screen app): show the install hint. */
+const iosTab = isIOS() && !isStandalone();
 
 function NameGate() {
   const [name, setName] = useState('');
@@ -24,7 +29,9 @@ function NameGate() {
 type Tab = 'bays' | 'search' | 'issues' | 'plan';
 const K_UI = 'reefer.ui.v1';
 
-function loadUi(): { filter: Filter; quickMark: boolean } {
+type BaysLayout = 'tiles' | 'overview';
+
+function loadUi(): { filter: Filter; quickMark: boolean; layout?: BaysLayout } {
   try {
     const s = localStorage.getItem(K_UI);
     if (s) return JSON.parse(s);
@@ -52,12 +59,13 @@ export function App() {
   const [uiFilter, setFilter] = useState<Filter>(ui0.filter);
   const filter: Filter = { ...uiFilter, planPort: plan?.currentPort };
   const [quickMark, setQuickMark] = useState<boolean>(ui0.quickMark);
+  const [layout, setLayout] = useState<BaysLayout>(ui0.layout === 'overview' ? 'overview' : 'tiles');
   const [now, setNow] = useState(Date.now());
   const notified = useRef(new Set<string>());
 
   useEffect(() => {
-    try { localStorage.setItem(K_UI, JSON.stringify({ filter: uiFilter, quickMark })); } catch { /* ignore */ }
-  }, [uiFilter, quickMark]);
+    try { localStorage.setItem(K_UI, JSON.stringify({ filter: uiFilter, quickMark, layout })); } catch { /* ignore */ }
+  }, [uiFilter, quickMark, layout]);
 
   useEffect(() => {
     navigator.storage?.persist?.().catch(() => undefined); // ask the browser not to evict our data
@@ -133,6 +141,12 @@ export function App() {
         </button>
       )}
 
+      {iosTab && tab !== 'plan' && (
+        <button class="install-banner" onClick={() => setTab('plan')}>
+          iPhone: add the app to the home screen to get full screen and keep the data. How ›
+        </button>
+      )}
+
       {overdue.length > 0 && tab !== 'issues' && (
         <button class="overdue-banner" onClick={() => setTab('issues')}>
           ⚠ {overdue.length} reefer{overdue.length > 1 ? 's' : ''} disconnected over {settings.remindHours} h. Confirm discharge ›
@@ -142,7 +156,15 @@ export function App() {
       <main>
         {!plan && tab !== 'plan' && <p class="muted pad">Open a plan first (Plan tab).</p>}
         {plan && tab === 'bays' && (bay < 0
-          ? <BayList plan={plan} filter={filter} onBay={setBay} now={now} />
+          ? <>
+              <div class="seg layout-seg">
+                <button class={layout === 'tiles' ? 'on' : ''} onClick={() => setLayout('tiles')}>Tiles</button>
+                <button class={layout === 'overview' ? 'on' : ''} onClick={() => setLayout('overview')}>Overview</button>
+              </div>
+              {layout === 'overview'
+                ? <Overview plan={plan} filter={filter} onBay={setBay} />
+                : <BayList plan={plan} filter={filter} onBay={setBay} now={now} />}
+            </>
           : <BayView plan={plan} bay={bay} filter={filter} quickMark={quickMark} onOpen={setOpen} onBay={setBay} now={now} />)}
         {plan && tab === 'search' && <Search plan={plan} onOpen={setOpen} bay={bay} />}
         {plan && tab === 'issues' && <Issues plan={plan} filter={filter} onOpen={setOpen} now={now} />}

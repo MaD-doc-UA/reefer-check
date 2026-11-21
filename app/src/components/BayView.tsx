@@ -1,6 +1,7 @@
-import { DECK_TIERS, HOLD_TIERS, ROWS_ORDER, bayGroupLabel, fmtElapsed, isOverdue, pad2, plugBayOf, side20, statusOf, type Plan, type Reefer, type Status } from '../model';
+import { DECK_TIERS, HOLD_TIERS, ROWS_ORDER, bayGroupLabel, fmtElapsed, isOverdue, pad2, plugBayOf, statusOf, type Plan, type Reefer, type Status } from '../model';
 import { setStatus, useStore } from '../store';
-import { categoryOf, isDone, passes, restowHere, placed, shortNo, type Filter } from '../view';
+import { categoryOf, isDone, passes, restowHere, shortNo, type Filter } from '../view';
+import { bayCells, cellKey, type CellData } from '../bayCells';
 
 interface Props {
   plan: Plan;
@@ -24,41 +25,10 @@ function nextStatus(cur: Status | undefined, mode: Filter['mode']): Status | und
   return null;
 }
 
-interface CellData {
-  slot: boolean;      // a reefer plug exists here (any of 40'/20')
-  c40?: Reefer;
-  fore?: Reefer;
-  aft?: Reefer;
-}
-
 export function BayView({ plan, bay, filter, quickMark, onOpen, onBay, now }: Props) {
   const { marks, settings } = useStore();
-  const cells = new Map<string, CellData>();
-  const key = (row: number, tier: number) => `${row}-${tier}`;
-  const get = (row: number, tier: number) => {
-    const k = key(row, tier);
-    let c = cells.get(k);
-    if (!c) { c = { slot: false }; cells.set(k, c); }
-    return c;
-  };
-  for (const p of plan.slots) {
-    const b = +p.slice(0, 2);
-    if (plugBayOf(b) === bay) get(+p.slice(2, 4), +p.slice(4, 6)).slot = true;
-  }
-  // reefers kept from the arrival plan exist only in DISCH mode; there they sit in their old slot,
-  // and so do moved reefers (restow) in DISCH mode (a loading reefer planned for the same slot comes later, so it gives way)
-  const atArrival = (r: Reefer) => !!r.carried || placed(r, filter) !== r;
-  const inBay = plan.reefers
-    .filter(r => placed(r, filter).plugBay === bay && (!r.carried || filter.mode === 'pod'))
-    .sort((a, b) => Number(atArrival(a)) - Number(atArrival(b)));
-  for (const r of inBay) {
-    const p = placed(r, filter);
-    const c = get(p.row, p.tier);
-    c.slot = true;
-    const s = side20(p.bay, p.plugBay);
-    if (atArrival(r)) { c.c40 = undefined; if (s !== 'aft') c.fore = undefined; if (s !== 'fore') c.aft = undefined; }
-    if (s === 'fore') c.fore = r; else if (s === 'aft') c.aft = r; else c.c40 = r;
-  }
+  const { cells, inBay } = bayCells(plan, bay, filter);
+  const key = cellKey;
 
   const shown = inBay.filter(r => passes(r, filter));
   const done = shown.filter(r => isDone(marks[r.cont], filter)).length;
@@ -82,12 +52,10 @@ export function BayView({ plan, bay, filter, quickMark, onOpen, onBay, now }: Pr
   const box = (r: Reefer, size20?: 'F' | 'A', half = false) => {
     const m = marks[r.cont];
     const st = statusOf(m);
-    const dim = !passes(r, filter);
     const cls = [
       half ? 'half' : 'full', `c-${categoryOf(r)}`,
       st === 'connected' ? 'loaded' : '', st === 'disconnected' ? 'disc' : '', st === 'discharged' ? 'gone' : '',
       isOverdue(m, settings.remindHours, now) ? 'overdue' : '',
-      dim ? 'dim' : '',
       restowHere(r, filter) ? 'restow' : '', r.tempDiff ? 'tdiff' : '',
       m && (m.tags.length || m.note || m.foundBay !== undefined || m.movedFrom) ? 'issue' : '',
     ].join(' ');
@@ -151,7 +119,7 @@ export function BayView({ plan, bay, filter, quickMark, onOpen, onBay, now }: Pr
       <p class="muted small">
         {plan.slots.some(p => { const b = +p.slice(0, 2); return b % 2 === 1 && plugBayOf(b) === bay; }) &&
           `20A / 20F = 20' container aft (${pad2(bay + 1)}) / fore (${pad2(bay - 1)}). Two 20's in one slot are shown one above the other. `}
-        Faded = outside the port filter.
+        {filter.mode !== 'all' && filter.port && `Only ${filter.mode === 'pol' ? 'LOAD' : 'DISCH'} ${filter.port} reefers are shown; ALL shows the whole ship.`}
       </p>
       {foundHere.length > 0 && (
         <div class="card">
