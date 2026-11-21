@@ -9,6 +9,31 @@ import {
 import { askPortChange } from '../portAsk';
 import { fmtPos } from '../view';
 import { QrReceive, QrSend } from './QrTransfer';
+import { iosBrowser, isIOS, isStandalone } from '../platform';
+
+/** iPhone in a browser tab: how to get the app on the home screen (own window, data kept). */
+function IosInstall() {
+  const br = iosBrowser();
+  return (
+    <div class="card install-card">
+      <h3>Install on this iPhone</h3>
+      <p class="small">Now the app runs in a {br === 'inapp' ? 'window of another app' : 'browser tab'}. Put it on the home screen
+        and always open it from the icon: it gets its own full screen and the phone keeps its data.</p>
+      <ol class="small steps">
+        {br === 'inapp'
+          ? <li>Open this page in <b>Safari</b>: in this app's menu (⋯ or the compass icon) tap <b>Open in Safari</b>.</li>
+          : br === 'safari' && <li>Link opened from <b>WhatsApp / Telegram / mail</b>? First tap the <b>compass icon</b> (or ⋯ → <b>Open in Safari</b>):
+            inside those apps there is no Add to Home Screen.</li>}
+        <li>Tap <b>Share</b> (square with an arrow up){br === 'safari' ? ' in the bottom bar (or behind ⋯)' : ''}.</li>
+        <li>Scroll down, tap <b>Add to Home Screen</b>.</li>
+        <li>Keep <b>Open as Web App</b> switched on (if shown), tap <b>Add</b>.</li>
+        <li>Close this tab and open <b>Reefers</b> from the home screen.</li>
+      </ol>
+      <p class="muted small">The home-screen app has its own storage: a plan and marks opened here in the browser are not there.
+        Open the plan again in the app (or move marks with Save marks file / QR codes).</p>
+    </div>
+  );
+}
 
 function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
@@ -44,6 +69,8 @@ const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
 export function PlanPanel() {
   const { plan, marks, lastMerge, user, log, settings, archive, closedPort, storageUsed } = useStore();
   const [persisted, setPersisted] = useState<boolean | null>(null);
+  const ios = isIOS();
+  const standalone = isStandalone();
   useEffect(() => { storagePersisted().then(setPersisted); }, []);
   const [name, setName] = useState(user);
   const [busy, setBusy] = useState(false);
@@ -111,6 +138,7 @@ export function PlanPanel() {
 
   return (
     <div class="plan-panel">
+      {ios && !standalone && <IosInstall />}
       <div class="card">
         <h3>Plan file</h3>
         {plan ? (
@@ -263,9 +291,18 @@ export function PlanPanel() {
         <p class="small">
           Used {(storageUsed / 1e6).toFixed(2)} of about {STORAGE_LIMIT / 1e6} MB ({storagePercent(storageUsed)}%) ·{' '}
           {persisted === true ? <span class="ok">protected</span>
+            : ios && standalone ? <span class="ok">home-screen app</span>
             : persisted === false ? <span class="bad">not protected</span> : <span class="muted">protection unknown</span>}
         </p>
-        {persisted !== true && (
+        {persisted !== true && ios && standalone && (
+          <p class="muted small">iPhone does not clean the data of a home-screen app for disuse (it does for Safari tabs).
+            Only deleting the app icon removes it. Still save the marks file and log CSV after each port.</p>
+        )}
+        {persisted !== true && ios && !standalone && (
+          <p class="muted small">In a Safari tab the iPhone may delete this data after about 7 days without use.
+            Install the app on the home screen (card at the top) and work from the icon.</p>
+        )}
+        {persisted !== true && !ios && (
           <p class="muted small">The phone may delete the data of a site it thinks is unused. Add the app to the home screen
             (Install / Add to Home Screen) and open it from there, and save the marks file and log CSV after each port.</p>
         )}
