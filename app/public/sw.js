@@ -1,6 +1,6 @@
 // Offline cache for the app shell. Plan data is never fetched over the network:
 // it lives in the phone's local storage only.
-const CACHE = 'reefer-check-v2';
+const CACHE = 'reefer-check-v3';
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', './index.html', './manifest.webmanifest', './icon-512.png'])));

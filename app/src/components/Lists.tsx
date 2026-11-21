@@ -84,7 +84,7 @@ export function Issues({ plan, filter, onOpen, now }: { plan: Plan; filter: Filt
   const attention = rs(r => r.attention !== null);
   const tdiff = rs(r => r.tempDiff);
   const restow = rs(r => restowHere(r, filter));
-  const special = rs(r => ['ct', 'ca', 'pharma'].includes(categoryOf(r)));
+  const special = rs(r => ['ct', 'ca', 'pharma', 'superfreezer'].includes(categoryOf(r)));
 
   const section = (title: string, list: Reefer[], hint?: string, cls = '') => list.length > 0 && (
     <div class={`card ${cls}`}>
@@ -118,7 +118,7 @@ export function Issues({ plan, filter, onOpen, now }: { plan: Plan; filter: Filt
       {section('Attention list (Excel)', attention)}
       {section('Temperature differs (BAP vs manifest)', tdiff)}
       {section('Restow', restow)}
-      {section('Special (pharma / CT / CA)', special)}
+      {section('Special (pharma / CT / CA / SF)', special)}
       {!anything && <p class="muted">Nothing to show for this filter.</p>}
     </div>
   );

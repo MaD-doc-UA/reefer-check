@@ -1,6 +1,6 @@
 // Data model shared by the parser, the store and the UI.
 
-export type SpecialType = 'CT' | 'CA' | 'PHARMA' | '';
+export type SpecialType = 'CT' | 'CA' | 'PHARMA' | 'SF' | '';
 
 export interface Reefer {
   cont: string;          // full container number, e.g. ABCU1234567 (key for marks)
@@ -21,7 +21,7 @@ export interface Reefer {
   co2: number | null;
   special: SpecialType | string; // type from Special sheet ('' = none)
   attention: string | null;      // note from ATTENTION sheet (null = not listed)
-  posNote: string;               // note from Notes sheet (e.g. PIGTAIL)
+  posNote: string;               // note from Notes sheet (any position note)
   restow: string;                // '' | AUTO | PLANNER | ABOVE PLANNER
   /** only in the arrival plan (DISCHARGE sheet, or the previous plan for old files): to discharge, not in the final plan */
   carried?: boolean;

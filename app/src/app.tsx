@@ -8,6 +8,7 @@ import { Overview } from './components/Overview';
 import { ContainerSheet } from './components/ContainerSheet';
 import { PlanPanel } from './components/PlanPanel';
 import { isIOS, isStandalone } from './platform';
+import { NAME_INPUT } from './nameInput';
 
 /** iPhone browser tab (not the home-screen app): show the install hint. */
 const iosTab = isIOS() && !isStandalone();
@@ -19,7 +20,7 @@ function NameGate() {
       <form class="sheet name-gate" onSubmit={e => { e.preventDefault(); if (name.trim()) setUser(name); }}>
         <h2>Who is using this phone?</h2>
         <p class="muted small">Your name is written next to every mark in the activity log, so the team can see who checked what. It stays on this phone only.</p>
-        <input class="text" autoFocus value={name} maxLength={40} placeholder="e.g. ETO Andrii" onInput={e => setName((e.target as HTMLInputElement).value)} />
+        <input class="text" autoFocus {...NAME_INPUT} onInput={e => setName((e.target as HTMLInputElement).value)} />
         <button class="big-btn" type="submit" disabled={!name.trim()}>Continue</button>
       </form>
     </div>

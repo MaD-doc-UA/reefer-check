@@ -86,7 +86,7 @@ export function BayView({ plan, bay, filter, quickMark, onOpen, onBay, now }: Pr
       <div class="grid-scroll">
         <table class="bay-grid">
           <thead>
-            <tr><th />{usedRows.map(row => <th>{pad2(row)}</th>)}</tr>
+            <tr><th />{usedRows.map(row => <th>{pad2(row)}</th>)}<th /></tr>
           </thead>
           <tbody>
             {tiers.map(t => (
@@ -99,6 +99,7 @@ export function BayView({ plan, bay, filter, quickMark, onOpen, onBay, now }: Pr
                     <td class="slot">{slotContent(c)}</td>
                   );
                 })}
+                <th class="tier-r">{pad2(t)}</th>
               </tr>
             ))}
           </tbody>

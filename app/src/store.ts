@@ -160,7 +160,7 @@ export function getState(): State {
 // ---------------------------------------------------------------- user + log
 
 export function setUser(name: string) {
-  const user = name.trim().slice(0, 40);
+  const user = name.trim().replace(/\s+/g, ' ').slice(0, 60);
   state = { ...state, user };
   save(K_USER, user);
   emit();
