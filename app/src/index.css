@@ -333,6 +333,9 @@ input.text { border: 1px solid var(--line); border-radius: 8px; background: var(
   padding: 8px 16px; background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: 14px;
 }
 .install-card { border-color: var(--accent); }
+.pc-card { border-color: var(--accent); border-width: 2px; }
+.close-steps { border-left: 3px solid var(--accent); padding-left: 10px; margin-top: 6px; }
+.close-steps p { margin: 8px 0 4px; }
 .install-card .steps { margin: 6px 0; padding-left: 22px; }
 .install-card .steps li { margin: 4px 0; }
 
@@ -345,11 +348,12 @@ input.text { border: 1px solid var(--line); border-radius: 8px; background: var(
 .layout-seg { max-width: 280px; }
 .ov-bays { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px 8px; align-items: start; }
 .ov-bay {
-  display: flex; flex-direction: column; padding: 6px 5px 4px; border: 1px solid var(--line); border-radius: 8px;
+  display: block; width: 100%; min-width: 0; padding: 6px 5px 4px; border: 1px solid var(--line); border-radius: 8px;
   background: var(--surface); color: var(--text); text-align: center; font: inherit;
 }
 .ov-bay.none { opacity: .55; }
-.ov-inner { container-type: inline-size; display: flex; flex-direction: column; }
+/* explicit width: iOS Safari collapses an inline-size container inside a <button> to ~0 */
+.ov-inner { container-type: inline-size; width: 100%; display: flex; flex-direction: column; }
 /* very narrow panels: row numbers do not fit, keep only the tier labels */
 @container (max-width: 135px) { .ov-inner .ov-head { display: none; } }
 .ov-block { display: grid; grid-template-columns: 11px repeat(14, 1fr); }

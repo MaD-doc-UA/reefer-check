@@ -4,14 +4,14 @@ import { App } from './app';
 
 render(<App />, document.getElementById('app')!);
 
-// launch splash (static markup in index.html): keep it briefly, then fade out
+// launch splash (static markup in index.html): keep it until the checkmark has lit up once, then fade out
 const splash = document.getElementById('splash');
 if (splash) {
   const shown = performance.now();
   setTimeout(() => {
     splash.classList.add('hide');
-    setTimeout(() => splash.remove(), 400);
-  }, Math.max(0, 900 - shown));
+    setTimeout(() => splash.remove(), 700);
+  }, Math.max(0, 1800 - shown));
 }
 
 if (import.meta.env.DEV && location.hash.startsWith('#demo')) {

@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { parseWorkbook } from '../parseWorkbook';
 import { statusOf } from '../model';
 import {
-  applyPlan, archivedLogCsv, archivedMarksBlob, clearAll, closePort, deleteArchived, dismissMerge, dropCarried, exportBackup, exportLogCsv, getState,
+  archivedLogCsv, archivedMarksBlob, clearAll, closePort, deleteArchived, dismissMerge, dropCarried, exportBackup, exportLogCsv,
   STORAGE_LIMIT, storagePercent, storagePersisted,
-  exportMarks, importMarks, isOlderPortPlan, portChangeOf, setRemindHours, setUser, useStore,
+  exportMarks, setArchivePcDone, setRemindHours, setUser, useStore,
 } from '../store';
-import { askPortChange } from '../portAsk';
+import { mergeMarksFile, openAnyFile, openPlanFile, takeSharedFiles } from '../openFile';
+import { saveFile, sendFile, type SendResult } from '../share';
 import { fmtPos } from '../view';
 import { QrReceive, QrSend } from './QrTransfer';
 import { iosBrowser, isIOS, isStandalone } from '../platform';
@@ -34,15 +34,6 @@ function IosInstall() {
         Open the plan again in the app (or move marks with Save marks file / QR codes).</p>
     </div>
   );
-}
-
-function download(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 /** A button that acts only after it is held down for `ms` (no accidental taps). */
@@ -77,53 +68,61 @@ export function PlanPanel() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [qr, setQr] = useState<'' | 'send' | 'receive'>('');
+  /** two-step port close: 'ask' = step 1 (send the log) shown, 'sent' = log sent, close allowed with no warning */
+  const [closing, setClosing] = useState<'' | 'ask' | 'sent'>('');
 
-  const openPlan = async (e: Event) => {
-    const input = e.target as HTMLInputElement;
-    const f = input.files?.[0];
-    input.value = '';
-    if (!f) return;
+  const run = async (job: () => Promise<string>, failText: string) => {
     setBusy(true); setMsg('');
     try {
-      const p = await parseWorkbook(f);
-      if (isOlderPortPlan(p) && !confirm(`This file is for ${p.currentPort} and was made before you closed ${closedPort} on this phone. Open it anyway?`)) return;
-      const ch = portChangeOf(p);
-      let closed = '';
-      if (ch) {
-        const a = askPortChange(ch);
-        if (!a) return;
-        if (a === 'close') {
-          if (!closePort(p)) return;
-          closed = ch.from;
-        }
-      }
-      applyPlan(p);
-      const st = getState();
-      setMsg(`Loaded ${p.reefers.length - p.reefers.filter(r => r.carried).length} reefers from ${p.fileName}` +
-        (p.hasArrival ? ` (+ arrival plan: ${p.reefers.filter(r => r.carried).length} to discharge).` : '.') +
-        (closed ? ` ${closed} closed and archived, ${Object.keys(st.marks).length} tags/notes kept.` : plan ? ` Marks kept: ${Object.keys(st.marks).length}.` : ''));
+      const m = await job();
+      if (m) setMsg(m);
     } catch (err) {
-      setMsg(`Could not read the file: ${(err as Error).message}`);
+      setMsg(`${failText}: ${(err as Error).message}`);
     } finally {
       setBusy(false);
     }
+    window.scrollTo(0, 0);
   };
 
-  const saveMarks = () => download(exportMarks(), `reefer-marks-${(user || 'phone').replace(/\W+/g, '_')}-${stamp()}.json`);
-  const saveLog = () => download(exportLogCsv(), `reefer-log-${stamp()}.csv`);
-
-  const loadMarks = async (e: Event) => {
+  const pickedFile = (e: Event) => {
     const input = e.target as HTMLInputElement;
     const f = input.files?.[0];
     input.value = '';
-    if (!f) return;
-    try {
-      const res = importMarks(await f.text());
-      setMsg(`Marks merged: ${res.updated} containers updated, ${res.logAdded} log lines added.` + (res.skipped ? ` ${res.skipped} marks of a closed port ignored.` : ''));
-    } catch (err) {
-      setMsg(`Could not read marks: ${(err as Error).message}`);
-    }
+    return f;
   };
+  const openPlan = (e: Event) => { const f = pickedFile(e); if (f) run(() => openPlanFile(f), 'Could not read the file'); };
+  const loadMarks = (e: Event) => { const f = pickedFile(e); if (f) run(() => mergeMarksFile(f), 'Could not merge marks'); };
+
+  // Android: a file shared to the app (Share > Reefers) arrives here once, after a reload with ?shared
+  useEffect(() => {
+    if (!new URLSearchParams(location.search).has('shared')) return;
+    history.replaceState(null, '', location.pathname + location.hash);
+    takeSharedFiles().then(files => {
+      if (!files.length) { setMsg('Nothing was received from the share. Try again, or open the file with the buttons below.'); return; }
+      run(async () => {
+        const out: string[] = [];
+        for (const f of files) out.push(await openAnyFile(f).catch(e => `${f.name}: ${(e as Error).message}`));
+        return out.filter(Boolean).join(' ');
+      }, 'Could not open the shared file');
+    });
+  }, []);
+
+  const who = () => (user || 'phone').replace(/\W+/g, '_');
+  const sent = (r: SendResult, what: string) => {
+    if (r === 'downloaded') setMsg(`${what} saved to this phone (Downloads). Send it from there.`);
+  };
+  const sendLog = async () => {
+    const r = await sendFile(exportLogCsv(), `reefer-log-${who()}-${stamp()}.csv`);
+    sent(r, 'Log CSV');
+    return r !== 'cancel';
+  };
+  const sendMarks = async () => sent(await sendFile(exportMarks(), `reefer-marks-${who()}-${stamp()}.json`), 'Marks file');
+  const sendArchivedLog = async (a: typeof archive[number]) => {
+    const r = await sendFile(archivedLogCsv(a), `reefer-log-${safe(a.port)}-${who()}-${a.closedAt.slice(0, 10)}.csv`);
+    sent(r, `Log of ${a.port}`);
+    return r !== 'cancel';
+  };
+  const pcPending = archive.find(a => !a.pcDone && a.log.length > 0);
 
   const count = (s: string) => Object.values(marks).filter(m => statusOf(m) === s).length;
   const carried = plan ? plan.reefers.filter(r => r.carried) : [];
@@ -140,6 +139,17 @@ export function PlanPanel() {
   return (
     <div class="plan-panel">
       {ios && !standalone && <IosInstall />}
+      {pcPending && (
+        <div class="card pc-card">
+          <h3>For the PC: log of {pcPending.port}</h3>
+          <p class="small">{pcPending.port} was closed on this phone ({archDate(pcPending.closedAt)}). Send its log to the PC
+            ({ios ? 'AirDrop / Files' : 'Bluetooth'}) and load it in Excel with <b>IMPORT PHONE LOG</b>. This one file is all Excel needs.</p>
+          <div class="row-inline">
+            <button class="big-btn" onClick={() => sendArchivedLog(pcPending)}>Send log to PC</button>
+            <button class="small-btn" onClick={() => setArchivePcDone(pcPending.closedAt)}>Done, it is on the PC</button>
+          </div>
+        </div>
+      )}
       <div class="card">
         <h3>Plan file</h3>
         {plan ? (
@@ -193,12 +203,30 @@ export function PlanPanel() {
           {portOpen ? (
             <>
               <p class="muted small">When the port is finished (Excel: CLOSE PORT), the next plan file asks to close it here too. Or close it now:
-                marks and log go to the archive below, tags and notes of reefers still on board stay.</p>
-              <button class="small-btn" disabled={!portData} onClick={() => {
-                if (confirm(`Close ${plan.currentPort || 'this port'} on this phone? Marks and log go to the archive (last 3 ports), tags and notes of reefers on board stay.`)) {
-                  if (closePort()) setMsg(`${plan.currentPort} closed. Open the plan of the next port.`);
-                }
-              }}>Close port {plan.currentPort}</button>
+                marks and log go to the archive below; reefers still on board stay connected, with their tags and notes.</p>
+              {!closing ? (
+                <button class="small-btn" disabled={!portData} onClick={() => setClosing('ask')}>Close port {plan.currentPort}…</button>
+              ) : (
+                <div class="close-steps">
+                  <p class="small"><b>1.</b> Send the log of {plan.currentPort} to the PC (Excel: IMPORT PHONE LOG).
+                    {closing === 'sent' && <span class="ok"> ✓ sent</span>}</p>
+                  <button class="small-btn" disabled={!log.length} onClick={async () => { if (await sendLog()) setClosing('sent'); }}>Send log to PC</button>
+                  <p class="small"><b>2.</b> Close {plan.currentPort} on this phone. Its marks and log stay in the archive (last 3 ports);
+                    reefers on board stay connected, with their tags and notes.</p>
+                  <div class="row-inline">
+                    <button class="small-btn" onClick={() => {
+                      if (closing !== 'sent' && !confirm(`The log was not sent from here. Close ${plan.currentPort} anyway? You can still send it later from the archive.`)) return;
+                      const a = closePort();
+                      if (!a) return;
+                      if (closing === 'sent') setArchivePcDone(a.closedAt);
+                      setClosing('');
+                      setMsg(`${plan.currentPort} closed. Open the plan of the next port.`);
+                      window.scrollTo(0, 0);
+                    }}>Close port {plan.currentPort}</button>
+                    <button class="small-btn" onClick={() => setClosing('')}>Cancel</button>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <p class="small">{closedPort} is closed on this phone. Open the plan of the next port (EXPORT TO PHONE in Excel).</p>
@@ -208,8 +236,8 @@ export function PlanPanel() {
             <div class="archive-row">
               <div class="small"><b>{a.port}</b> <span class="muted">closed {archDate(a.closedAt)} by {a.closedBy} · {Object.keys(a.marks).length} marks · {a.log.length} log lines</span></div>
               <div class="row-inline">
-                <button class="small-btn" onClick={() => download(archivedMarksBlob(a), `reefer-marks-${safe(a.port)}-${safe(user || 'phone')}-${a.closedAt.slice(0, 10)}.json`)}>Marks file</button>
-                <button class="small-btn" disabled={!a.log.length} onClick={() => download(archivedLogCsv(a), `reefer-log-${safe(a.port)}-${a.closedAt.slice(0, 10)}.csv`)}>Log CSV</button>
+                <button class="small-btn" disabled={!a.log.length} onClick={() => sendArchivedLog(a)}>Log to PC</button>
+                <button class="small-btn" onClick={async () => sent(await sendFile(archivedMarksBlob(a), `reefer-marks-${safe(a.port)}-${who()}-${a.closedAt.slice(0, 10)}.json`), 'Marks file')}>Marks file (phones)</button>
                 <button class="small-btn danger" onClick={() => { if (confirm(`Delete the archive of ${a.port} from this phone?`)) deleteArchived(a.closedAt); }}>Delete</button>
               </div>
             </div>
@@ -229,35 +257,38 @@ export function PlanPanel() {
       </div>
 
       <div class="card">
-        <h3>Phone to phone (QR codes)</h3>
-        <p class="muted small">Send the plan and marks to another phone (also iPhone) with no network: this screen shows a loop of QR codes, the other phone reads them with its camera.</p>
+        <h3>For the PC (Excel)</h3>
+        <p class="muted small">Excel needs one file from each phone: the <b>log CSV</b> (statuses, tags, notes, found elsewhere).
+          On the PC: <b>IMPORT PHONE LOG</b>. Several phones: send each log, or first gather the marks on one phone by QR.</p>
+        <div class="row-inline">
+          <button class="small-btn" onClick={sendLog} disabled={!log.length}>Send log to PC</button>
+        </div>
+        {closedPort && !portOpen && <p class="muted small">The log of a closed port is in the archive (Port card above: Log to PC).</p>}
+      </div>
+
+      <div class="card">
+        <h3>For a colleague's phone</h3>
+        <p class="muted small"><b>QR codes</b> (best, also iPhone, no network): this screen shows a loop of QR codes, the other phone reads them with its camera.
+          Or send a <b>marks file</b> (any messenger / Bluetooth / AirDrop) and the other phone merges it. Newest change per container wins.</p>
         <div class="row-inline">
           <button class="small-btn" onClick={() => setQr('send')} disabled={!plan && !Object.keys(marks).length}>Send by QR codes</button>
           <button class="small-btn" onClick={() => setQr('receive')}>Receive by QR codes</button>
         </div>
-      </div>
-
-      <div class="card">
-        <h3>Share / backup marks</h3>
-        <p class="muted small">Save your marks to a file, or merge a colleague's file (newest change per container wins).</p>
         <div class="row-inline">
-          <button class="small-btn" onClick={saveMarks} disabled={!Object.keys(marks).length}>Save marks file</button>
-          <label class="small-btn">Merge marks file<input type="file" accept=".json,application/json" onChange={loadMarks} hidden /></label>
+          <button class="small-btn" onClick={sendMarks} disabled={!Object.keys(marks).length}>Send marks file</button>
+          <label class="small-btn">Merge marks file<input type="file" onChange={loadMarks} hidden /></label>
         </div>
       </div>
 
       <div class="card">
         <h3>Activity log <span class="muted">({log.length})</span></h3>
-        <p class="muted small">Every mark, tag, note and plan change with time and name. Save as CSV to open in Excel.</p>
+        <p class="muted small">Every mark, tag, note and plan change with time and name (the last ones below; the PC gets all of it with Send log to PC).</p>
         {log.slice(-8).reverse().map(e => (
           <div class="small log-line">
             <span class="muted">{new Date(e.t).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>{' '}
             <b>{e.by}</b> {e.action} {e.cont ?? ''}{e.detail ? `: ${e.detail}` : ''}
           </div>
         ))}
-        <div class="row-inline">
-          <button class="small-btn" onClick={saveLog} disabled={!log.length}>Save log (CSV)</button>
-        </div>
       </div>
 
       <div class="card">
@@ -315,7 +346,7 @@ export function PlanPanel() {
         <p class="small">Deletes the plan, all marks, tags, notes, the log and the closed-port archive. Your name and the reminder setting stay.
           Use it to start clean (new test, new voyage) or after a mess. It cannot be undone.</p>
         <div class="row-inline">
-          <button class="small-btn" onClick={() => download(exportBackup(), `reefer-backup-${safe(user || 'phone')}-${stamp()}.json`)}
+          <button class="small-btn" onClick={() => saveFile(exportBackup(), `reefer-backup-${who()}-${stamp()}.json`)}
             disabled={!plan && !Object.keys(marks).length && !log.length && !archive.length}>Save backup first</button>
         </div>
         <p class="muted small">Backup: marks, log and archive in one file. "Merge marks file" brings its marks and log back.</p>

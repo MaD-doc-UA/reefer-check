@@ -41,6 +41,8 @@ export interface ArchivedPort {
   fileName: string;
   marks: Marks;
   log: LogEntry[];
+  /** the user said its log is on the PC (or sent it before closing): the "For the PC" card is gone */
+  pcDone?: boolean;
 }
 
 interface State {
@@ -418,10 +420,22 @@ export function exportMarks(): Blob {
 const logKey = (e: LogEntry) => `${e.t}|${e.by}|${e.action}|${e.cont ?? ''}|${e.detail ?? ''}`;
 
 /** Merge marks from a colleague: newer change per container wins; logs are combined. */
-export function importMarks(json: string): { updated: number; logAdded: number; skipped: number } {
-  const data = JSON.parse(json);
-  if (data?.kind !== 'reefer-marks' || typeof data.marks !== 'object') throw new Error('Not a marks file.');
-  return mergeMarks(data.marks as Marks, Array.isArray(data.log) ? (data.log as LogEntry[]) : [], data.by);
+export interface MergeResult {
+  updated: number;   // containers taken from the file (newer than ours)
+  same: number;      // already the same or newer on this phone
+  logAdded: number;
+  skipped: number;   // older than the last port close: ignored
+  cutoff: string;    // that port close time ('' = none)
+}
+
+/** Merge a marks file (Save marks file, archived port, backup) from a colleague or this phone. */
+export function importMarks(json: string): MergeResult & { by: string; port?: string } {
+  let data;
+  try { data = JSON.parse(json); } catch { throw new Error('This is not a marks file (not readable as JSON).'); }
+  if (data?.kind === 'reefer-qr') throw new Error('This is a QR transfer, not a marks file.');
+  if (data?.kind !== 'reefer-marks' || typeof data.marks !== 'object') throw new Error('This is not a marks file of this app.');
+  const by = String(data.by || '');
+  return { ...mergeMarks(data.marks as Marks, Array.isArray(data.log) ? (data.log as LogEntry[]) : [], by), by, port: data.port };
 }
 
 /** Marks / log lines older than this belong to a closed port (closed on this phone, or CLOSE PORT in Excel). */
@@ -430,14 +444,15 @@ export function cutoffTime(): string {
   return a > b ? a : b;
 }
 
-function mergeMarks(incomingMarks: Marks, incomingLog: LogEntry[], from: string | undefined): { updated: number; logAdded: number; skipped: number } {
+function mergeMarks(incomingMarks: Marks, incomingLog: LogEntry[], from: string | undefined): MergeResult {
   const marks = { ...state.marks };
   const cut = cutoffTime();
-  let updated = 0, skipped = 0;
+  let updated = 0, skipped = 0, same = 0;
   for (const [cont, m] of Object.entries(incomingMarks)) {
+    if (!m || typeof m.updatedAt !== 'string') continue;
     if (cut && m.updatedAt < cut) { skipped++; continue; }
     const mine = marks[cont];
-    if (!mine || mine.updatedAt < m.updatedAt) { marks[cont] = m; updated++; }
+    if (!mine || mine.updatedAt < m.updatedAt) { marks[cont] = m; updated++; } else same++;
   }
   const seen = new Set(state.log.map(logKey));
   const incoming = incomingLog.filter(e => !seen.has(logKey(e)) && !(cut && e.t < cut));
@@ -448,7 +463,7 @@ function mergeMarks(incomingMarks: Marks, incomingLog: LogEntry[], from: string 
   save(K_LOG, log);
   addLog([{ action: 'merge', detail: `from ${from || 'colleague'}: ${updated} containers, ${incoming.length} log lines` + (skipped ? `, ${skipped} marks of a closed port ignored` : '') }]);
   emit();
-  return { updated, logAdded: incoming.length, skipped };
+  return { updated, same, logAdded: incoming.length, skipped, cutoff: cut };
 }
 
 /** What a QR transfer carries (see qrTransfer.ts). */
@@ -466,11 +481,11 @@ export function transferPayload(withPlan: boolean, withLog: boolean): TransferPa
  * Apply a received QR transfer: the plan (if sent, different from ours and not of a port closed here), then merge the marks.
  * closeOld: the plan is for another port and the user chose to close the open port first.
  */
-export function applyTransfer(p: TransferPayload, closeOld = false): { planApplied: boolean; oldPlan: boolean; updated: number; logAdded: number; skipped: number } {
+export function applyTransfer(p: TransferPayload, closeOld = false): { planApplied: boolean; oldPlan: boolean } & MergeResult {
   let planApplied = false;
   const oldPlan = !!p.plan && isOlderPortPlan(p.plan);
   if (p.plan && p.plan.id !== state.plan?.id && !oldPlan) {
-    if (closeOld && !closePort(p.plan)) return { planApplied, oldPlan, updated: 0, logAdded: 0, skipped: 0 };
+    if (closeOld && !closePort(p.plan)) return { planApplied, oldPlan, updated: 0, same: 0, logAdded: 0, skipped: 0, cutoff: '' };
     applyPlan(p.plan);
     planApplied = true;
   }
@@ -509,8 +524,8 @@ function saveArchive(list: ArchivedPort[]): ArchivedPort[] | null {
 
 /**
  * Close the open port on this phone: its marks and log go to the archive (last 3 ports), the working
- * marks and log are cleared. Tags and notes of reefers still on board (in `next`, or the open plan) stay,
- * stamped with the close time, so Excel (PhoneCutoff) takes them for the next port.
+ * marks and log are cleared. Reefers still on board (in `next`, or the open plan) keep their status
+ * (connected / disconnected), found place, tags and notes, stamped with the close time, so Excel (PhoneCutoff) takes them for the next port.
  * Returns null (nothing changed) if the archive could not be saved.
  */
 export function closePort(next?: Plan): ArchivedPort | null {
@@ -529,17 +544,30 @@ export function closePort(next?: Plan): ArchivedPort | null {
   const onBoard = new Set((next ?? cur)?.reefers.map(r => r.cont) ?? []);
   const marks: Marks = {};
   for (const [c, m] of Object.entries(state.marks)) {
-    if (!onBoard.has(c) || (!m.tags.length && !m.note.trim())) continue;
-    marks[c] = { ...emptyMark(), tags: [...m.tags], note: m.note, updatedAt: t, updatedBy: m.updatedBy };
+    if (!onBoard.has(c)) continue;
+    const st = statusOf(m);
+    // still on board: a connected (or disconnected) reefer stays so at the next port; discharged ones start clean
+    const keepStatus = st === 'connected' || st === 'disconnected';
+    if (!keepStatus && !m.tags.length && !m.note.trim()) continue;
+    marks[c] = keepStatus
+      ? { ...m, tags: [...m.tags], movedFrom: undefined, notInPlan: undefined, updatedAt: t }
+      : { ...emptyMark(), tags: [...m.tags], note: m.note, updatedAt: t, updatedBy: m.updatedBy };
   }
   state = { ...state, marks, log: [], since: t, closedPort: entry.port, archive, lastMerge: null };
   save(K_MARKS, marks);
   save(K_LOG, []);
   save(K_PORT, { at: t, port: entry.port });
   save(K_MERGE, null);
-  addLog([{ action: 'port', detail: `closed ${entry.port}: ${Object.keys(entry.marks).length} marks and ${entry.log.length} log lines archived, ${Object.keys(marks).length} tags/notes kept` }]);
+  addLog([{ action: 'port', detail: `closed ${entry.port}: ${Object.keys(entry.marks).length} marks and ${entry.log.length} log lines archived, ${Object.keys(marks).length} reefers on board kept` }]);
   emit();
   return entry;
+}
+
+export function setArchivePcDone(closedAt: string) {
+  const archive = state.archive.map(a => a.closedAt === closedAt ? { ...a, pcDone: true } : a);
+  state = { ...state, archive };
+  save(K_ARCHIVE, archive);
+  emit();
 }
 
 export function deleteArchived(closedAt: string) {

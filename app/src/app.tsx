@@ -53,7 +53,8 @@ function notify(text: string) {
 
 export function App() {
   const { plan, marks, user, settings, storageError, storageUsed } = useStore();
-  const [tab, setTab] = useState<Tab>(plan ? 'bays' : 'plan');
+  // ?shared = a file was shared to the app (Android Share > Reefers): the Plan tab opens it
+  const [tab, setTab] = useState<Tab>(plan && !location.search.includes('shared') ? 'bays' : 'plan');
   const [bay, setBay] = useState<number>(-1);
   const [open, setOpen] = useState<Reefer | null>(null);
   const ui0 = loadUi();

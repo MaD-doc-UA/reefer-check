@@ -14,14 +14,19 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Reefer check</title>
     <style>
+      /* launch splash: always dark (same as the Android system splash, manifest background_color) */
       #splash { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center;
-        background: #f1f2ed; transition: opacity .35s ease; }
-      #splash img { width: min(82vw, 60vh, 400px); height: auto; }
+        background: #2b2b2b; transition: opacity .6s ease; }
+      #splash .logo { position: relative; width: min(88vw, 62vh, 440px); aspect-ratio: 1; }
+      #splash img { position: absolute; inset: 0; width: 100%; height: 100%; }
+      #splash .glow { opacity: 0; animation: glow 2.4s ease-in-out infinite; }
+      @keyframes glow { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) { #splash .glow { animation: none; opacity: .6; } }
       #splash.hide { opacity: 0; pointer-events: none; }
     </style>
   </head>
   <body>
-    <div id="splash" aria-hidden="true"><img src="./icon-512.png" alt="" /></div>
+    <div id="splash" aria-hidden="true"><div class="logo"><img src="./splash.webp" alt="" /><img class="glow" src="./splash-glow.webp" alt="" /></div></div>
     <div id="app"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
