@@ -4,14 +4,16 @@ import { App } from './app';
 
 render(<App />, document.getElementById('app')!);
 
-// launch splash (static markup in index.html): keep it for one full pulse of the checkmark (2.4 s, index.html), then fade out
+// launch splash (static markup in index.html): keep it for one full pulse of the checkmark (2.4 s, index.html), then fade out.
+// On a slow cold start the Android system splash covers the page for seconds, so the 2.6 s since navigation can pass
+// unseen: always keep it at least 1.8 s after the app is ready.
 const splash = document.getElementById('splash');
 if (splash) {
-  const shown = performance.now();
+  const ready = performance.now();
   setTimeout(() => {
     splash.classList.add('hide');
     setTimeout(() => splash.remove(), 700);
-  }, Math.max(0, 2600 - shown));
+  }, Math.max(1800, 2600 - ready));
 }
 
 if (import.meta.env.DEV && location.hash.startsWith('#demo')) {

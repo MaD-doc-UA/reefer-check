@@ -1,6 +1,6 @@
 // Offline cache for the app shell. Plan data is never fetched over the network:
 // it lives in the phone's local storage only.
-const CACHE = 'reefer-check-v5';
+const CACHE = 'reefer-check-v6';
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', './index.html', './manifest.webmanifest', './icon-512.png', './splash.webp', './splash-glow.webp'])));
@@ -40,16 +40,22 @@ self.addEventListener('fetch', event => {
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
 
   if (req.mode === 'navigate') {
-    // network first so a new version is picked up when online; cached page offline
-    event.respondWith(
-      fetch(req)
-        .then(res => {
-          const copy = res.clone();
-          caches.open(CACHE).then(c => c.put('./index.html', copy));
-          return res;
-        })
-        .catch(() => caches.match('./index.html'))
-    );
+    // network first so a new version is picked up when online; cached page offline or when the network is slow
+    // (weak signal on deck: a hanging fetch kept the app on the system splash)
+    const net = fetch(req).then(res => {
+      if (res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put('./index.html', copy));
+      }
+      return res;
+    });
+    event.waitUntil(net.catch(() => {}));
+    event.respondWith((async () => {
+      const cached = await caches.match('./index.html');
+      if (!cached) return net;
+      const slow = new Promise(resolve => setTimeout(() => resolve(cached), 2000));
+      return Promise.race([net.catch(() => cached), slow]);
+    })());
     return;
   }
 
