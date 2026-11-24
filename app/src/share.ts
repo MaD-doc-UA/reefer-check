@@ -25,7 +25,9 @@ export type SendResult = 'shared' | 'downloaded' | 'cancel';
  * (PC browser, old phones). 'cancel' = the user closed the share sheet.
  */
 export async function sendFile(blob: Blob, name: string): Promise<SendResult> {
-  const file = new File([blob], name, { type: blob.type || 'application/octet-stream' });
+  // bare MIME type: Chrome on Android refuses to share "text/csv;charset=utf-8" (only exact allowed types such as text/csv).
+  // Note: it never shares .json (not on its list), so marks files fall back to a download there.
+  const file = new File([blob], name, { type: (blob.type || 'application/octet-stream').split(';')[0].trim() });
   if (canShareFile(file)) {
     try {
       await navigator.share({ files: [file], title: name });
