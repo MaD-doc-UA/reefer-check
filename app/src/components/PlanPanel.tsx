@@ -341,6 +341,16 @@ export function PlanPanel() {
         <p class="muted small">Data stays only on this phone. Nothing is sent anywhere.</p>
       </div>
 
+      <div class="card">
+        <h3>About</h3>
+        <p class="small">© 2026 MaD-doc-UA. All rights reserved.</p>
+        <p class="muted small">Idea, workbook, testing: MaD-doc-UA<br />
+          Macros, phone app and guides: built with Claude (Anthropic)<br />
+          Manifest parser: <a href="https://github.com/Ledron-mf-dude" target="_blank" rel="noopener noreferrer">Ledron-mf-dude</a><br />
+          Phone app: <a href="https://github.com/MaD-doc-UA/reefer-check" target="_blank" rel="noopener noreferrer">github.com/MaD-doc-UA/reefer-check</a><br />
+          Based on an original spot plan (2012) by Lisische</p>
+      </div>
+
       <div class="card danger-card">
         <h3>Reset this phone</h3>
         <p class="small">Deletes the plan, all marks, tags, notes, the log and the closed-port archive. Your name and the reminder setting stay.

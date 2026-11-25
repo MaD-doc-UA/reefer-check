@@ -104,6 +104,7 @@ main { flex: 1; padding: 12px 16px calc(80px + env(safe-area-inset-bottom)); max
 
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
 .card h3 { margin: 0 0 8px; font-size: 1rem; }
+.card a { color: var(--accent); overflow-wrap: anywhere; }
 .msg { margin: 8px 0 0; }
 .plain { margin: 0 0 8px; padding-left: 18px; }
 
