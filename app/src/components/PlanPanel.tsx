@@ -348,6 +348,7 @@ export function PlanPanel() {
           Macros, phone app and guides: built with Claude (Anthropic)<br />
           Manifest parser: <a href="https://github.com/Ledron-mf-dude" target="_blank" rel="noopener noreferrer">Ledron-mf-dude</a><br />
           Phone app: <a href="https://github.com/MaD-doc-UA/reefer-check" target="_blank" rel="noopener noreferrer">github.com/MaD-doc-UA/reefer-check</a><br />
+          Backup link (if the main one does not open): <a href="https://reefer-check.pages.dev/" target="_blank" rel="noopener noreferrer">reefer-check.pages.dev</a><br />
           Based on an original spot plan (2012) by Lisische</p>
       </div>
 
