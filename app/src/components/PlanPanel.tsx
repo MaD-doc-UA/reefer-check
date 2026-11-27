@@ -343,7 +343,7 @@ export function PlanPanel() {
 
       <div class="card">
         <h3>About</h3>
-        <p class="small">© 2026 Ledron-mf-dude &amp; MaD-doc-UA. All rights reserved.</p>
+        <p class="small">© 2026 MaD-doc-UA &amp; Ledron-mf-dude. All rights reserved.</p>
         <p class="muted small">Idea, workbook, testing: MaD-doc-UA<br />
           Macros, phone app and guides: built with Claude (Anthropic)<br />
           Manifest parser: <a href="https://github.com/Ledron-mf-dude" target="_blank" rel="noopener noreferrer">Ledron-mf-dude</a><br />
