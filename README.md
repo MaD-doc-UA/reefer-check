@@ -133,7 +133,7 @@ npm run build:sender  # сторінка для ПК у app/dist-sender
 Файли `.xlsm`, `.BAP`, маніфести, CSV та папки `testdata/`, `app/localtest/` не потрапляють у git, бо в них дані вантажу.
 
 ## Автори
-© 2026 MaD-doc-UA. All rights reserved.
+© 2026 Ledron-mf-dude & MaD-doc-UA. All rights reserved.
 
 - Idea, workbook, testing: MaD-doc-UA
 - Macros, phone app and guides: built with Claude (Anthropic)
@@ -144,4 +144,4 @@ npm run build:sender  # сторінка для ПК у app/dist-sender
 Ті самі рядки стоять на аркуші Home книги «Reefer spot plan» і в застосунку (Plan → About). Парсер вказано профілем автора, без посилання на його репозиторій.
 
 ## Ліцензія
-© 2026 MaD-doc-UA. All rights reserved. Без письмового дозволу автора не можна копіювати, змінювати, поширювати чи продавати код (див. [LICENSE](LICENSE)).
+© 2026 Ledron-mf-dude & MaD-doc-UA. All rights reserved. Без письмового дозволу авторів не можна копіювати, змінювати, поширювати чи продавати код (див. [LICENSE](LICENSE)).
