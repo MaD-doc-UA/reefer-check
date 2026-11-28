@@ -49,7 +49,7 @@ function drawQr(canvas: HTMLCanvasElement, text: string, cssPx: number) {
 export function QrSend({ withPlan: withPlan0, onClose }: { withPlan: boolean; onClose: () => void }) {
   const { plan, marks, log } = getState();
   const [withPlan, setWithPlan] = useState(withPlan0 && !!plan);
-  const [withLog, setWithLog] = useState(false);
+  const [withLog, setWithLog] = useState(true);
   const [density, setDensity] = useState<Density>('normal');
   const [fps, setFps] = useState(3);
   const [paused, setPaused] = useState(false);

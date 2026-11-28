@@ -77,7 +77,22 @@ export interface Mark {
   // filled by the merge when a new plan arrives
   movedFrom?: string;    // planned position before the new plan
   notInPlan?: boolean;   // marked container no longer in the plan
+  /**
+   * Time of the last change per group of fields (status / found place / tags / note), so a merge takes
+   * each group from the phone that changed it last. Missing group = updatedAt (older data).
+   */
+  at?: Partial<Record<MarkGroup, string>>;
 }
+
+export type MarkGroup = 'st' | 'found' | 'tags' | 'note';
+
+/** Fields of each group (notInPlan is not here: every phone works it out from its own plan). */
+export const MARK_GROUPS: Record<MarkGroup, (keyof Mark)[]> = {
+  st: ['loaded', 'status', 'checkedPos', 'loadedAt', 'loadedBy', 'disconnectedAt', 'disconnectedBy', 'dischargedAt', 'dischargedBy', 'movedFrom'],
+  found: ['foundBay', 'foundPos'],
+  tags: ['tags'],
+  note: ['note'],
+};
 
 export type Marks = Record<string, Mark>;
 

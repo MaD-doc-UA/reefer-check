@@ -11,6 +11,8 @@ export interface TransferPayload {
   plan?: Plan;
   marks: Marks;
   log?: LogEntry[];
+  /** containers whose marks were cleared on the sender (container -> time), so they are cleared here too */
+  cleared?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------- compact plan (columns instead of keys)
