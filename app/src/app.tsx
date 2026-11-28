@@ -45,15 +45,15 @@ function notify(text: string) {
   try {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
     navigator.serviceWorker?.getRegistration().then(reg => {
-      if (reg) reg.showNotification('Reefer check', { body: text, tag: 'overdue', icon: './icon-192.png' });
-      else new Notification('Reefer check', { body: text });
+      if (reg) reg.showNotification('Reefer Check', { body: text, tag: 'overdue', icon: './icon-192.png' });
+      else new Notification('Reefer Check', { body: text });
     }).catch(() => undefined);
   } catch { /* ignore */ }
 }
 
 export function App() {
   const { plan, marks, user, settings, storageError, storageUsed } = useStore();
-  // ?shared = a file was shared to the app (Android Share > Reefers): the Plan tab opens it
+  // ?shared = a file was shared to the app (Android Share > Reefer Check): the Plan tab opens it
   const [tab, setTab] = useState<Tab>(plan && !location.search.includes('shared') ? 'bays' : 'plan');
   const [bay, setBay] = useState<number>(-1);
   const [open, setOpen] = useState<Reefer | null>(null);
@@ -102,7 +102,7 @@ export function App() {
     <div class="app">
       <header class="top">
         <div class="title">
-          <b>Reefer check</b>
+          <b>Reefer Check</b>
           {plan && (
             <span class="muted small">
               {done}/{shown.length} {doneLabel(filter)}{filter.mode === 'pod' ? ` · ${disc} disconnected` : ''}

@@ -1,6 +1,6 @@
 {
-  "name": "Reefer check",
-  "short_name": "Reefers",
+  "name": "Reefer Check",
+  "short_name": "Reefer Check",
   "description": "Offline reefer loading check for the electro team",
   "start_url": "./",
   "scope": "./",

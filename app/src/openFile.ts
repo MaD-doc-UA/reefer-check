@@ -1,5 +1,5 @@
 // Opening a file in the app: a plan (.xlsx / .xlsm) or a marks file (.json), picked in the app or shared to it
-// from another app (Android: Share > Reefers, see share_target in the manifest and sw.js).
+// from another app (Android: Share > Reefer Check, see share_target in the manifest and sw.js).
 import { parseWorkbook } from './parseWorkbook';
 import { applyPlan, closePort, getState, importMarks, isOlderPortPlan, portChangeOf } from './store';
 import { askPortChange } from './portAsk';
@@ -52,7 +52,7 @@ export async function openAnyFile(f: File): Promise<string> {
 
 const SHARED_CACHE = 'reefer-shared';
 
-/** Files shared to the app (Android Share > Reefers): the service worker parked them in a cache. Taken once. */
+/** Files shared to the app (Android Share > Reefer Check): the service worker parked them in a cache. Taken once. */
 export async function takeSharedFiles(): Promise<File[]> {
   if (!('caches' in window)) return [];
   const cache = await caches.open(SHARED_CACHE);

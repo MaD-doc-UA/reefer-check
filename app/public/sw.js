@@ -18,7 +18,7 @@ self.addEventListener('fetch', event => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Android Share > Reefers (manifest share_target): park the files, open the app; the Plan tab takes them
+  // Android Share > Reefer Check (manifest share_target): park the files, open the app; the Plan tab takes them
   if (req.method === 'POST' && url.origin === self.location.origin && url.pathname.endsWith('/share-target')) {
     event.respondWith((async () => {
       try {

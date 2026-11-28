@@ -128,7 +128,7 @@ export class FrameCollector {
     for (let i = 1; i <= this.n; i++) s += this.parts.get(i) ?? '';
     const json = strFromU8(unzlibSync(b45decode(s))); // zlib checksum catches a damaged transfer
     const w = JSON.parse(json);
-    if (w?.kind !== 'reefer-qr' || typeof w.marks !== 'object') throw new Error('Not a Reefer check transfer.');
+    if (w?.kind !== 'reefer-qr' || typeof w.marks !== 'object') throw new Error('Not a Reefer Check transfer.');
     return { ...w, plan: w.plan ? planFromWire(w.plan) : undefined };
   }
 }

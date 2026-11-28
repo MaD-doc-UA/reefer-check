@@ -28,7 +28,7 @@ function IosInstall() {
         <li>Tap <b>Share</b> (square with an arrow up){br === 'safari' ? ' in the bottom bar (or behind ⋯)' : ''}.</li>
         <li>Scroll down, tap <b>Add to Home Screen</b>.</li>
         <li>Keep <b>Open as Web App</b> switched on (if shown), tap <b>Add</b>.</li>
-        <li>Close this tab and open <b>Reefers</b> from the home screen.</li>
+        <li>Close this tab and open <b>Reefer Check</b> from the home screen.</li>
       </ol>
       <p class="muted small">The home-screen app has its own storage: a plan and marks opened here in the browser are not there.
         Open the plan again in the app (or move marks with Save marks file / QR codes).</p>
@@ -93,7 +93,7 @@ export function PlanPanel() {
   const openPlan = (e: Event) => { const f = pickedFile(e); if (f) run(() => openPlanFile(f), 'Could not read the file'); };
   const loadMarks = (e: Event) => { const f = pickedFile(e); if (f) run(() => mergeMarksFile(f), 'Could not merge marks'); };
 
-  // Android: a file shared to the app (Share > Reefers) arrives here once, after a reload with ?shared
+  // Android: a file shared to the app (Share > Reefer Check) arrives here once, after a reload with ?shared
   useEffect(() => {
     if (!new URLSearchParams(location.search).has('shared')) return;
     history.replaceState(null, '', location.pathname + location.hash);
