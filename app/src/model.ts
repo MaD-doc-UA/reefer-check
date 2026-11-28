@@ -78,13 +78,19 @@ export interface Mark {
   movedFrom?: string;    // planned position before the new plan
   notInPlan?: boolean;   // marked container no longer in the plan
   /**
-   * Time of the last change per group of fields (status / found place / tags / note), so a merge takes
-   * each group from the phone that changed it last. Missing group = updatedAt (older data).
+   * Time of the last change per group of fields (status / found place / tags / note).
+   * Missing group = updatedAt (older data). Decides a merge only when the counters below cannot.
    */
   at?: Partial<Record<MarkGroup, string>>;
+  /**
+   * Version counter per group (Lamport): every change of a group sets it one above the highest seen,
+   * so a merge takes each group from the later change whatever the phone clocks say. Missing = older data.
+   */
+  v?: GroupVersions;
 }
 
 export type MarkGroup = 'st' | 'found' | 'tags' | 'note';
+export type GroupVersions = Partial<Record<MarkGroup, number>>;
 
 /** Fields of each group (notInPlan is not here: every phone works it out from its own plan). */
 export const MARK_GROUPS: Record<MarkGroup, (keyof Mark)[]> = {

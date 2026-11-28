@@ -1,7 +1,7 @@
 // Phone-to-phone transfer by a loop of QR codes (Android -> iPhone, no network, no Bluetooth).
 // Payload JSON -> zlib (with checksum) -> Base45 (QR alphanumeric set) -> frames "RC1:SID:I:N:DATA".
 import { strToU8, strFromU8, unzlibSync, zlibSync } from 'fflate';
-import type { LogEntry, Marks, Plan, Reefer } from './model';
+import type { GroupVersions, LogEntry, Marks, Plan, Reefer } from './model';
 
 export interface TransferPayload {
   kind: 'reefer-qr';
@@ -13,6 +13,8 @@ export interface TransferPayload {
   log?: LogEntry[];
   /** containers whose marks were cleared on the sender (container -> time), so they are cleared here too */
   cleared?: Record<string, string>;
+  /** version counters of those cleared marks (container -> group counters); older apps ignore it */
+  clearedV?: Record<string, GroupVersions>;
 }
 
 // ---------------------------------------------------------------- compact plan (columns instead of keys)

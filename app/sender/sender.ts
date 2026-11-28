@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
 import jsQR from 'jsqr';
 import { parseWorkbook } from '../src/parseWorkbook';
 import { DENSITY, encodeFrames, FrameCollector, parseFrame, type Density } from '../src/qrTransfer';
-import { mergeMarkSets, type Cleared } from '../src/merge';
+import { mergeMarkSets, type Cleared, type ClearedV } from '../src/merge';
 import { fmtLocal, logCsv, statusOf, type LogEntry, type Mark, type Marks, type Plan, type Reefer } from '../src/model';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -107,14 +107,16 @@ async function openWorkbook(file: File) {
 
 let marks: Marks = {};
 let cleared: Cleared = {};
+let clearedV: ClearedV = {};
 let log: LogEntry[] = [];
 const sources: string[] = [];
 
-function mergeIn(incoming: Marks, inLog: LogEntry[] | undefined, from: string, inCleared?: Cleared) {
+function mergeIn(incoming: Marks, inLog: LogEntry[] | undefined, from: string, inCleared?: Cleared, inClearedV?: ClearedV) {
   const cut = plan?.cutoff ?? ''; // closed port (Excel CLOSE PORT would skip it too)
-  // per group of fields: the phone that changed it last wins (same merge as on the phones)
-  const r = mergeMarkSets(marks, cleared, incoming, inCleared && typeof inCleared === 'object' ? inCleared : {}, cut);
-  marks = r.marks; cleared = r.cleared;
+  // per group of fields: the later change (higher version counter) wins (same merge as on the phones)
+  const r = mergeMarkSets({ marks, cleared, clearedV },
+    { marks: incoming, cleared: inCleared && typeof inCleared === 'object' ? inCleared : {}, clearedV: inClearedV && typeof inClearedV === 'object' ? inClearedV : {} }, cut);
+  marks = r.marks; cleared = r.cleared; clearedV = r.clearedV;
   const updated = r.updated, old = r.skipped;
   const key = (e: LogEntry) => `${e.t}|${e.by}|${e.action}|${e.cont ?? ''}|${e.detail ?? ''}`;
   const seen = new Set(log.map(key));
@@ -187,7 +189,7 @@ async function openMarksFiles(files: FileList) {
     try {
       const data = JSON.parse(await f.text());
       if (data?.kind !== 'reefer-marks' || typeof data.marks !== 'object') throw new Error('not a marks file');
-      mergeIn(data.marks, data.log, `${data.by || f.name} (file)`, data.cleared);
+      mergeIn(data.marks, data.log, `${data.by || f.name} (file)`, data.cleared, data.clearedV);
     } catch (e) {
       sources.push(`${f.name}: ${(e as Error).message}`);
       renderMarks();
@@ -239,7 +241,7 @@ async function startScan() {
         if (col.complete) {
           try {
             const p = col.payload();
-            mergeIn(p.marks, p.log, `${p.by || 'phone'} (QR)`, p.cleared);
+            mergeIn(p.marks, p.log, `${p.by || 'phone'} (QR)`, p.cleared, p.clearedV);
             msg.textContent = `Received from ${p.by || 'phone'}. Next phone: just show its codes.`;
           } catch (e) {
             msg.textContent = `Damaged, try again: ${(e as Error).message}`;
@@ -286,7 +288,7 @@ function init() {
   $('saveLog').addEventListener('click', saveLogCsv);
   $('clearBack').addEventListener('click', () => {
     if (!confirm('Clear everything received from the phones on this page?')) return;
-    marks = {}; cleared = {}; log = []; sources.length = 0; renderMarks();
+    marks = {}; cleared = {}; clearedV = {}; log = []; sources.length = 0; renderMarks();
   });
   renderMarks();
 }

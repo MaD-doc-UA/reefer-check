@@ -1,7 +1,7 @@
 // Local persistence (only on this phone), activity log and merging marks into a new plan.
 import { useEffect, useState } from 'preact/hooks';
 import { emptyMark, hasContent, logCsv, nowIso, plugBayOf, statusOf, type LogAction, type LogEntry, type Mark, type MarkGroup, type Marks, type Plan, type Status, type Tag } from './model';
-import { allGroups, GROUP_OF, GROUPS, groupTime, mergeMarkSets } from './merge';
+import { allGroups, bumpVersions, GROUP_OF, GROUPS, groupTime, mergeMarkSets, type ClearedV } from './merge';
 import type { TransferPayload } from './qrTransfer';
 
 const K_PLAN = 'reefer.plan.v1';
@@ -13,6 +13,7 @@ const K_SETTINGS = 'reefer.settings.v1';
 const K_PORT = 'reefer.port.v1';       // time this phone closed the last port (ISO)
 const K_ARCHIVE = 'reefer.archive.v1'; // closed ports: marks + log
 const ARCHIVE_MAX = 3;
+const K_CLEARED_V = 'reefer.clearedV.v1'; // version counters of the cleared marks (container -> group counters)
 const K_CLEARED = 'reefer.cleared.v1'; // containers whose marks were cleared (container -> time), so an older copy from a colleague does not bring them back
 
 export interface Settings {
@@ -61,6 +62,8 @@ interface State {
   archive: ArchivedPort[];
   /** cleared marks (container -> time of clearing) */
   cleared: Record<string, string>;
+  /** version counters of the cleared marks (container -> group counters) */
+  clearedV: ClearedV;
   /** characters this app keeps in localStorage */
   storageUsed: number;
   /** last failed save (shown as a red banner until dismissed) */
@@ -118,6 +121,7 @@ let state: State = {
   closedPort: load<{ port?: string } | null>(K_PORT, null)?.port ?? '',
   archive: load<ArchivedPort[]>(K_ARCHIVE, []),
   cleared: load<Record<string, string>>(K_CLEARED, {}),
+  clearedV: load<ClearedV>(K_CLEARED_V, {}),
   storageUsed: 0,
   storageError: '',
 };
@@ -196,15 +200,20 @@ function writeMark(cont: string, change: Partial<Mark>) {
   // each group keeps its own change time; the changed groups get now
   const at: Partial<Record<MarkGroup, string>> = {};
   for (const g of GROUPS) at[g] = old ? groupTime(old, g) : (state.cleared[cont] ?? '');
-  for (const k of Object.keys(change)) { const g = GROUP_OF.get(k); if (g) at[g] = t; }
-  const next: Mark = { ...prev, ...change, at, updatedAt: t, updatedBy: state.user || '?' };
+  const changed = new Set<MarkGroup>();
+  for (const k of Object.keys(change)) { const g = GROUP_OF.get(k); if (g) { at[g] = t; changed.add(g); } }
+  // and its version counter goes one above the highest seen (Lamport), so the phone clock does not decide a merge
+  const v = bumpVersions(old ? old.v : state.clearedV[cont], changed);
+  const next: Mark = { ...prev, ...change, at, v, updatedAt: t, updatedBy: state.user || '?' };
   const marks = { ...state.marks };
   const cleared = { ...state.cleared };
-  if (!hasContent(next)) { delete marks[cont]; if (old) cleared[cont] = t; }
-  else { marks[cont] = next; delete cleared[cont]; }
-  state = { ...state, marks, cleared };
+  const clearedV = { ...state.clearedV };
+  if (!hasContent(next)) { delete marks[cont]; if (old) { cleared[cont] = t; clearedV[cont] = v; } }
+  else { marks[cont] = next; delete cleared[cont]; delete clearedV[cont]; }
+  state = { ...state, marks, cleared, clearedV };
   save(K_MARKS, marks);
   save(K_CLEARED, cleared);
+  save(K_CLEARED_V, clearedV);
 }
 
 /**
@@ -387,19 +396,22 @@ export function dismissMerge() {
 
 export function forgetNotInPlan(cont: string) {
   const marks = { ...state.marks };
+  const old = marks[cont];
   delete marks[cont];
   const cleared = { ...state.cleared, [cont]: nowIso() };
-  state = { ...state, marks, cleared };
+  const clearedV = { ...state.clearedV, [cont]: bumpVersions(old?.v ?? state.clearedV[cont], GROUPS) };
+  state = { ...state, marks, cleared, clearedV };
   save(K_MARKS, marks);
   save(K_CLEARED, cleared);
+  save(K_CLEARED_V, clearedV);
   addLog([{ action: 'remove', cont, detail: 'not in plan, removed from list' }]);
   emit();
 }
 
 /** Reset this phone: deletes plan, marks, log and closed-port archive (the name and settings stay). */
 export function clearAll() {
-  [K_PLAN, K_MARKS, K_MERGE, K_LOG, K_PORT, K_ARCHIVE, K_CLEARED].forEach(drop);
-  state = { ...state, plan: null, marks: {}, cleared: {}, lastMerge: null, log: [], since: null, closedPort: '', archive: [], storageError: '', storageUsed: usedChars() };
+  [K_PLAN, K_MARKS, K_MERGE, K_LOG, K_PORT, K_ARCHIVE, K_CLEARED, K_CLEARED_V].forEach(drop);
+  state = { ...state, plan: null, marks: {}, cleared: {}, clearedV: {}, lastMerge: null, log: [], since: null, closedPort: '', archive: [], storageError: '', storageUsed: usedChars() };
   emit();
 }
 
@@ -407,7 +419,7 @@ export function clearAll() {
 export function exportBackup(): Blob {
   const data = {
     kind: 'reefer-marks', version: 2, backup: true, exportedAt: nowIso(), by: state.user, plan: state.plan?.fileName ?? '',
-    marks: state.marks, cleared: state.cleared, log: state.log, archive: state.archive,
+    marks: state.marks, cleared: state.cleared, clearedV: state.clearedV, log: state.log, archive: state.archive,
   };
   return new Blob([JSON.stringify(data)], { type: 'application/json' });
 }
@@ -416,14 +428,15 @@ export function exportBackup(): Blob {
  * Marks and log of the open port only: what was marked before the last port close (on this phone or
  * CLOSE PORT in Excel) is not passed on, so a colleague never gets old ports back.
  */
-function currentSession(): { marks: Marks; cleared: Record<string, string>; log: LogEntry[] } {
+function currentSession(): { marks: Marks; cleared: Record<string, string>; clearedV: ClearedV; log: LogEntry[] } {
   const cut = cutoffTime();
-  if (!cut) return { marks: state.marks, cleared: state.cleared, log: state.log };
+  if (!cut) return { marks: state.marks, cleared: state.cleared, clearedV: state.clearedV, log: state.log };
   const marks: Marks = {};
   for (const [c, m] of Object.entries(state.marks)) if (m.updatedAt >= cut) marks[c] = m;
   const cleared: Record<string, string> = {};
-  for (const [c, t] of Object.entries(state.cleared)) if (t >= cut) cleared[c] = t;
-  return { marks, cleared, log: state.log.filter(e => e.t >= cut) };
+  const clearedV: ClearedV = {};
+  for (const [c, t] of Object.entries(state.cleared)) if (t >= cut) { cleared[c] = t; if (state.clearedV[c]) clearedV[c] = state.clearedV[c]; }
+  return { marks, cleared, clearedV, log: state.log.filter(e => e.t >= cut) };
 }
 
 // ---------------------------------------------------------------- sharing
@@ -453,7 +466,8 @@ export function importMarks(json: string): MergeResult & { by: string; port?: st
   if (data?.kind !== 'reefer-marks' || typeof data.marks !== 'object') throw new Error('This is not a marks file of this app.');
   const by = String(data.by || '');
   const cleared = data.cleared && typeof data.cleared === 'object' ? (data.cleared as Record<string, string>) : {};
-  return { ...mergeMarks(data.marks as Marks, Array.isArray(data.log) ? (data.log as LogEntry[]) : [], by, cleared), by, port: data.port };
+  const clearedV = data.clearedV && typeof data.clearedV === 'object' ? (data.clearedV as ClearedV) : {};
+  return { ...mergeMarks(data.marks as Marks, Array.isArray(data.log) ? (data.log as LogEntry[]) : [], by, cleared, clearedV), by, port: data.port };
 }
 
 /** Marks / log lines older than this belong to a closed port (closed on this phone, or CLOSE PORT in Excel). */
@@ -462,17 +476,20 @@ export function cutoffTime(): string {
   return a > b ? a : b;
 }
 
-function mergeMarks(incomingMarks: Marks, incomingLog: LogEntry[], from: string | undefined, incomingCleared: Record<string, string> = {}): MergeResult {
+function mergeMarks(incomingMarks: Marks, incomingLog: LogEntry[], from: string | undefined, incomingCleared: Record<string, string> = {}, incomingClearedV: ClearedV = {}): MergeResult {
   const cut = cutoffTime();
-  // per group of fields: the side that changed it last wins (see merge.ts)
-  const { marks, cleared, updated, same, skipped } = mergeMarkSets(state.marks, state.cleared, incomingMarks, incomingCleared, cut);
+  // per group of fields: the later change (higher version counter) wins (see merge.ts)
+  const { marks, cleared, clearedV, updated, same, skipped } = mergeMarkSets(
+    { marks: state.marks, cleared: state.cleared, clearedV: state.clearedV },
+    { marks: incomingMarks, cleared: incomingCleared, clearedV: incomingClearedV }, cut);
   const seen = new Set(state.log.map(logKey));
   const incoming = incomingLog.filter(e => !seen.has(logKey(e)) && !(cut && e.t < cut));
   let log = [...state.log, ...incoming].sort((a, b) => (a.t < b.t ? -1 : a.t > b.t ? 1 : 0));
   if (log.length > LOG_MAX) log = log.slice(log.length - LOG_MAX);
-  state = { ...state, marks, cleared, log };
+  state = { ...state, marks, cleared, clearedV, log };
   save(K_MARKS, marks);
   save(K_CLEARED, cleared);
+  save(K_CLEARED_V, clearedV);
   save(K_LOG, log);
   addLog([{ action: 'merge', detail: `from ${from || 'colleague'}: ${updated} containers, ${incoming.length} log lines` + (skipped ? `, ${skipped} marks of a closed port ignored` : '') }]);
   emit();
@@ -487,6 +504,7 @@ export function transferPayload(withPlan: boolean, withLog: boolean): TransferPa
     plan: withPlan && state.plan ? state.plan : undefined,
     marks: cur.marks,
     cleared: cur.cleared,
+    clearedV: cur.clearedV,
     log: withLog ? cur.log : undefined,
   };
 }
@@ -503,7 +521,7 @@ export function applyTransfer(p: TransferPayload, closeOld = false): { planAppli
     applyPlan(p.plan);
     planApplied = true;
   }
-  return { planApplied, oldPlan, ...mergeMarks(p.marks, p.log ?? [], p.by, p.cleared ?? {}) };
+  return { planApplied, oldPlan, ...mergeMarks(p.marks, p.log ?? [], p.by, p.cleared ?? {}, p.clearedV ?? {}) };
 }
 
 // ---------------------------------------------------------------- close port
@@ -564,12 +582,13 @@ export function closePort(next?: Plan): ArchivedPort | null {
     const keepStatus = st === 'connected' || st === 'disconnected';
     if (!keepStatus && !m.tags.length && !m.note.trim()) continue;
     marks[c] = keepStatus
-      ? { ...m, tags: [...m.tags], movedFrom: undefined, notInPlan: undefined, updatedAt: t, at: allGroups(t) }
-      : { ...emptyMark(), tags: [...m.tags], note: m.note, updatedAt: t, updatedBy: m.updatedBy, at: allGroups(t) };
+      ? { ...m, tags: [...m.tags], movedFrom: undefined, notInPlan: undefined, updatedAt: t, at: allGroups(t), v: bumpVersions(m.v, GROUPS) }
+      : { ...emptyMark(), tags: [...m.tags], note: m.note, updatedAt: t, updatedBy: m.updatedBy, at: allGroups(t), v: bumpVersions(m.v, GROUPS) };
   }
-  state = { ...state, marks, cleared: {}, log: [], since: t, closedPort: entry.port, archive, lastMerge: null };
+  state = { ...state, marks, cleared: {}, clearedV: {}, log: [], since: t, closedPort: entry.port, archive, lastMerge: null };
   save(K_MARKS, marks);
   save(K_CLEARED, {});
+  save(K_CLEARED_V, {});
   save(K_LOG, []);
   save(K_PORT, { at: t, port: entry.port });
   save(K_MERGE, null);
